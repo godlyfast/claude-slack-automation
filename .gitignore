@@ -1,0 +1,150 @@
+# Environment variables
+config.env
+.env
+.env.*
+
+# Cache files
+.channels_cache.json
+.users_cache.json
+*.cache.json
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
+
+# Node.js dependencies
+node_modules/
+jspm_packages/
+
+# Build outputs
+dist/
+build/
+out/
+.next/
+.nuxt/
+.cache/
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+slack-service/data/*.db
+slack-service/data/*.json
+
+# Temporary files
+temp/
+tmp/
+*.tmp
+*.temp
+slack-service/temp/
+
+# Lock files (except package-lock.json which should be committed)
+*.lock
+!package-lock.json
+claude_slack_bot.lock
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+.claude/
+
+# OS files
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Desktop.ini
+
+# Coverage reports
+coverage/
+*.lcov
+.nyc_output
+
+# Test outputs
+test-results/
+playwright-report/
+playwright/.cache/
+
+# Debug files
+debug.log
+npm-debug.log
+yarn-debug.log
+
+# Local development
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Backup files
+*.bak
+*.backup
+*.old
+
+# Compiled files
+*.com
+*.class
+*.dll
+*.exe
+*.o
+*.so
+
+# Archives
+*.7z
+*.dmg
+*.gz
+*.iso
+*.jar
+*.rar
+*.tar
+*.zip
+
+# SSL certificates
+*.pem
+*.key
+*.crt
+*.cer
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.Python
+
+# Personal notes
+notes.txt
+TODO.txt
+personal/
+
+# Service specific
+slack-service/logs/
+slack-service/data/channel-state.json
+slack-service/data/slack-bot.db
+utils/logs/
+launchd.*.log
+daemon.pid
+
+# One-time scripts
+send_*.js
+send_*.sh
+test_*.sh
+!test_integration.sh
+
+# Temporary documentation
+*.md.tmp
+docs/*.tmp
