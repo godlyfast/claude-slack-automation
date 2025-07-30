@@ -139,6 +139,12 @@ utils/logs/
 launchd.*.log
 daemon.pid
 
+# PID files
+*.pid
+.*.pid
+utils/.daemon.pid
+slack-service/.service.pid
+
 # One-time scripts
 send_*.js
 send_*.sh
