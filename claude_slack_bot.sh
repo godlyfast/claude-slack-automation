@@ -307,7 +307,17 @@ IMPORTANT: There are $FILE_COUNT files available for analysis from this channel.
     fi
     
     # Execute Claude with the instruction (with configurable timeout)
-    RESPONSE=$(echo "$CLAUDE_INSTRUCTION" | timeout ${CLAUDE_TIMEOUT:-30} claude 2>&1)
+    # Use gtimeout on macOS, timeout on Linux
+    if command -v gtimeout >/dev/null 2>&1; then
+        TIMEOUT_CMD="gtimeout"
+    elif command -v timeout >/dev/null 2>&1; then
+        TIMEOUT_CMD="timeout"
+    else
+        echo "Error: Neither timeout nor gtimeout command found. Please install coreutils."
+        exit 1
+    fi
+    
+    RESPONSE=$(echo "$CLAUDE_INSTRUCTION" | $TIMEOUT_CMD ${CLAUDE_TIMEOUT:-30} claude 2>&1)
     CLAUDE_EXIT_CODE=$?
     
     log_message "Claude CLI exit code: $CLAUDE_EXIT_CODE"
