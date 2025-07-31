@@ -25,9 +25,10 @@ class API {
 
     this.app.get('/messages/unresponded', async (req, res) => {
       try {
-        // Add 3 second timeout
+        // Add timeout from config
+        const apiTimeout = (parseInt(process.env.API_TIMEOUT) || 10) * 1000;
         const timeoutPromise = new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Request timed out after 3 seconds')), 3000)
+          setTimeout(() => reject(new Error(`Request timed out after ${apiTimeout/1000} seconds`)), apiTimeout)
         );
         
         const messagesPromise = this.slackService.getUnrespondedMessages();

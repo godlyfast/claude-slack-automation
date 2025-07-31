@@ -117,7 +117,7 @@ class SlackService {
             inclusive: false
           }),
           new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('Slack API timeout after 3 seconds')), 3000)
+            setTimeout(() => reject(new Error(`Slack API timeout after ${(parseInt(process.env.API_TIMEOUT) || 10)} seconds`)), (parseInt(process.env.API_TIMEOUT) || 10) * 1000)
           )
         ]),
         'conversations.history'
@@ -210,7 +210,7 @@ class SlackService {
             limit: 1000
           }),
           new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('Slack API timeout after 3 seconds')), 3000)
+            setTimeout(() => reject(new Error(`Slack API timeout after ${(parseInt(process.env.API_TIMEOUT) || 10)} seconds`)), (parseInt(process.env.API_TIMEOUT) || 10) * 1000)
           )
         ]),
         'conversations.list'
@@ -400,7 +400,7 @@ class SlackService {
             as_user: true // Important for user tokens (xoxp)
           }),
           new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('Slack API timeout after 3 seconds')), 3000)
+            setTimeout(() => reject(new Error(`Slack API timeout after ${(parseInt(process.env.API_TIMEOUT) || 10)} seconds`)), (parseInt(process.env.API_TIMEOUT) || 10) * 1000)
           )
         ]),
         'chat.postMessage'
