@@ -8,6 +8,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Load common functions
 source "$SCRIPT_DIR/scripts/common_functions.sh"
 
+# Load Slack API lock functions
+source "$SCRIPT_DIR/scripts/slack_api_lock.sh"
+
 # Operation-specific log files
 FETCH_LOG="$LOG_DIR/queue_fetcher.log"
 PROCESS_LOG="$LOG_DIR/queue_processor.log"
@@ -22,6 +25,9 @@ fetch_messages() {
         return 1
     fi
     
+    # Set up cleanup trap
+    trap cleanup_slack_lock EXIT
+    
     local max_retries="${MAX_RETRIES:-1000}"
     local retry_count=0
     local success=false
@@ -31,8 +37,27 @@ fetch_messages() {
         
         log "$FETCH_LOG" "Attempt $retry_count: Fetching messages from Slack..."
         
-        RESULT=$(curl -s -X POST "${SERVICE_URL}/queue/messages" 2>&1)
-        EXIT_CODE=$?
+        # Acquire lock before making Slack API request
+        if ! acquire_slack_lock; then
+            log_error "$FETCH_LOG" "Failed to acquire Slack API lock"
+            return 1
+        fi
+        
+        # Execute API call in a subshell to ensure lock release
+        (
+            RESULT=$(curl -s -X POST "${SERVICE_URL}/queue/messages" 2>&1)
+            EXIT_CODE=$?
+            echo "$RESULT" > "${TEMP_DIR}/fetch_result.tmp"
+            echo "$EXIT_CODE" > "${TEMP_DIR}/fetch_exit.tmp"
+        )
+        
+        # Always release lock after API call
+        release_slack_lock
+        
+        # Read results
+        RESULT=$(cat "${TEMP_DIR}/fetch_result.tmp" 2>/dev/null || echo "{}")
+        EXIT_CODE=$(cat "${TEMP_DIR}/fetch_exit.tmp" 2>/dev/null || echo "1")
+        rm -f "${TEMP_DIR}/fetch_result.tmp" "${TEMP_DIR}/fetch_exit.tmp"
         
         if [ $EXIT_CODE -eq 0 ] && echo "$RESULT" | jq -e '.success' >/dev/null 2>&1; then
             FETCHED=$(echo "$RESULT" | jq -r '.fetched // 0')
@@ -112,6 +137,9 @@ send_responses() {
         return 1
     fi
     
+    # Set up cleanup trap
+    trap cleanup_slack_lock EXIT
+    
     local max_retries="${MAX_RETRIES:-1000}"
     local retry_count=0
     local all_sent=false
@@ -130,12 +158,30 @@ send_responses() {
         
         log "$SEND_LOG" "Attempt $retry_count: Sending $PENDING_COUNT pending responses to Slack..."
         
-        RESULT=$(curl -s -X POST \
-            -H "Content-Type: application/json" \
-            -d "{\"batchSize\": ${batch_size}}" \
-            "${SERVICE_URL}/queue/send-responses" 2>&1)
+        # Acquire lock before making Slack API request
+        if ! acquire_slack_lock; then
+            log_error "$SEND_LOG" "Failed to acquire Slack API lock"
+            return 1
+        fi
         
-        EXIT_CODE=$?
+        # Execute API call in a subshell to ensure lock release
+        (
+            RESULT=$(curl -s -X POST \
+                -H "Content-Type: application/json" \
+                -d "{\"batchSize\": ${batch_size}}" \
+                "${SERVICE_URL}/queue/send-responses" 2>&1)
+            EXIT_CODE=$?
+            echo "$RESULT" > "${TEMP_DIR}/send_result.tmp"
+            echo "$EXIT_CODE" > "${TEMP_DIR}/send_exit.tmp"
+        )
+        
+        # Always release lock after API call
+        release_slack_lock
+        
+        # Read results
+        RESULT=$(cat "${TEMP_DIR}/send_result.tmp" 2>/dev/null || echo "{}")
+        EXIT_CODE=$(cat "${TEMP_DIR}/send_exit.tmp" 2>/dev/null || echo "1")
+        rm -f "${TEMP_DIR}/send_result.tmp" "${TEMP_DIR}/send_exit.tmp"
         
         if [ $EXIT_CODE -eq 0 ] && echo "$RESULT" | jq -e '.success' >/dev/null 2>&1; then
             SENT=$(echo "$RESULT" | jq -r '.sent // 0')

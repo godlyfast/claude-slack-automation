@@ -124,6 +124,7 @@ See docs/ENVIRONMENT_CONFIGURATION.md for complete list of all configuration opt
 12. **Lock Mechanism**: Prevents multiple bot instances from running simultaneously
 13. **Timeout Handling**: Posts helpful message when Claude times out with instructions
 14. **Thread Replies**: Bot ALWAYS sends responses as thread replies (using thread_ts) - NEVER as regular channel messages
+15. **API Lock Mechanism**: Fetch and send operations use a global lock to prevent concurrent Slack API requests
 
 ## Troubleshooting
 
