@@ -311,13 +311,14 @@ describe('ClaudeService', () => {
       expect(response).toContain('30 seconds');
     });
 
-    it('should throw non-timeout errors', async () => {
+    it('should return execution error for non-timeout errors', async () => {
       const message = { text: 'Test', channelName: '#test' };
 
       claudeService.buildClaudeInstruction = jest.fn().mockResolvedValue('instruction');
       claudeService.executeClaude = jest.fn().mockRejectedValue(new Error('Other error'));
 
-      await expect(claudeService.processMessage(message, [])).rejects.toThrow('Other error');
+      const response = await claudeService.processMessage(message, []);
+      expect(response).toBe('Execution error');
     });
   });
 

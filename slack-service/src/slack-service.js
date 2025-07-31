@@ -12,13 +12,13 @@ class SlackService {
     this.client = new WebClient(token, {
       // The SDK automatically handles rate limiting with retries
       retryConfig: {
-        retries: 10,  // Will retry up to 10 times
-        maxRetryTime: 300000  // 5 minutes max retry time
+        retries: parseInt(process.env.SLACK_RETRY_CONFIG_RETRIES) || 10,
+        maxRetryTime: parseInt(process.env.MAX_RETRY_TIME) || 300000
       },
       // Let SDK handle rate limits automatically
       rejectRateLimitedCalls: false,
       // Add logging for better debugging
-      logLevel: process.env.DEBUG_MODE === 'true' ? 'debug' : 'info'
+      logLevel: process.env.DEBUG_MODE === 'true' ? 'debug' : process.env.LOG_LEVEL || 'info'
     });
     
     // Monitor rate limit events
@@ -190,21 +190,26 @@ class SlackService {
     const filteredMessages = [];
     const respondedMessages = await this.db.getRespondedMessages(1000);
     const respondedIds = new Set(respondedMessages.map(m => m.message_id));
+    
+    logger.info(`Filtering ${messages.length} messages from ${channelName}`);
 
     for (const message of messages) {
       // Skip if already responded
       if (respondedIds.has(message.ts)) {
+        logger.debug(`Skipping message ${message.ts} - already responded`);
         continue;
       }
 
       // Skip bot messages
       if (message.bot_id || message.subtype === 'bot_message') {
+        logger.debug(`Skipping message ${message.ts} - bot message`);
         continue;
       }
 
       // Apply trigger word filtering
       const shouldRespond = this._shouldRespondToMessage(message);
       if (!shouldRespond) {
+        logger.debug(`Skipping message ${message.ts} - no trigger words`);
         continue;
       }
 
@@ -239,7 +244,10 @@ class SlackService {
   }
 
   _shouldRespondToMessage(message) {
-    if (!message.text) return false;
+    if (!message.text) {
+      logger.debug(`No text in message ${message.ts}`);
+      return false;
+    }
 
     if (this.config.responseMode === 'all') {
       // Check for trigger keywords

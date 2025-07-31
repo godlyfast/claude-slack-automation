@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Claude Slack Bot Control Script
-# Central management for all bot components in the hybrid Node.js + Claude architecture
+# Central management for queue-based architecture
 
 set -e
 
@@ -14,7 +14,6 @@ source "$SCRIPT_DIR/config.env"
 # Set defaults for any missing configuration
 SERVICE_PORT=${SERVICE_PORT:-3030}
 SERVICE_URL=${SERVICE_URL:-"http://localhost:$SERVICE_PORT"}
-PID_FILE=${PID_FILE:-utils/.daemon.pid}
 LOG_DIR=${LOG_DIR:-logs}
 
 # Colors for output
@@ -22,6 +21,7 @@ GREEN='\033[0;32m'
 RED='\033[0;31m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
+CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
 # Function to check if Node.js service is running
@@ -33,26 +33,15 @@ check_node_service() {
     fi
 }
 
-# Function to check if LaunchAgent is loaded
-check_launchagent() {
-    # Check if running on macOS
-    if [[ "$OSTYPE" == "darwin"* ]]; then
-        if launchctl list | grep -q "com.claude.slackbot"; then
-            echo "loaded"
-        else
-            echo "unloaded"
-        fi
+# Function to check queue status
+check_queue_status() {
+    if [ "$(check_node_service)" = "running" ]; then
+        # Get queue counts from database
+        MESSAGE_COUNT=$(sqlite3 slack-service/data/slack-bot.db "SELECT COUNT(*) FROM message_queue WHERE status='pending';" 2>/dev/null || echo "0")
+        RESPONSE_COUNT=$(sqlite3 slack-service/data/slack-bot.db "SELECT COUNT(*) FROM response_queue WHERE status='pending';" 2>/dev/null || echo "0")
+        echo "$MESSAGE_COUNT:$RESPONSE_COUNT"
     else
-        echo "not-macos"
-    fi
-}
-
-# Function to check if daemon is running
-check_daemon() {
-    if [ -f "$PID_FILE" ] && kill -0 "$(cat $PID_FILE)" 2>/dev/null; then
-        echo "running"
-    else
-        echo "stopped"
+        echo "0:0"
     fi
 }
 
@@ -66,10 +55,6 @@ start_node_service() {
         echo "Installing Node.js dependencies..."
         npm install
     fi
-    
-    # All configuration is now in root config.env
-    # No need for slack-service/.env file anymore
-    echo "Using unified config.env for all settings"
     
     # Start the service in background
     echo "Starting Node.js service on port $SERVICE_PORT..."
@@ -134,10 +119,44 @@ stop_node_service() {
     fi
 }
 
+# Function to run queue operations
+run_queue_operation() {
+    local OPERATION=$1
+    local BATCH_SIZE=${2:-5}
+    
+    case $OPERATION in
+        fetch)
+            echo -e "${CYAN}Fetching messages from Slack...${NC}"
+            ./queue_operations.sh fetch
+            ;;
+        process)
+            echo -e "${CYAN}Processing messages with Claude (batch: $BATCH_SIZE)...${NC}"
+            ./queue_operations.sh process $BATCH_SIZE
+            ;;
+        send)
+            echo -e "${CYAN}Sending responses to Slack (batch: $BATCH_SIZE)...${NC}"
+            echo -e "${YELLOW}NOTE: Sending has priority over fetching new messages${NC}"
+            ./queue_operations.sh send $BATCH_SIZE
+            ;;
+        all)
+            echo -e "${CYAN}Running complete queue cycle (send first, then fetch)...${NC}"
+            ./queue_operations.sh all $BATCH_SIZE
+            ;;
+        priority)
+            echo -e "${CYAN}Running in priority mode (send first, fetch only if nothing to send)...${NC}"
+            ./queue_operations.sh priority $BATCH_SIZE
+            ;;
+        *)
+            echo -e "${RED}Unknown operation: $OPERATION${NC}"
+            return 1
+            ;;
+    esac
+}
+
 # Function to setup everything
 setup_all() {
-    echo -e "${BLUE}🤖 Claude Slack Bot - Complete Setup${NC}"
-    echo "========================================"
+    echo -e "${BLUE}🤖 Claude Slack Bot - Queue-Based Setup${NC}"
+    echo "==========================================="
     echo
     
     # Check prerequisites
@@ -155,11 +174,17 @@ setup_all() {
         exit 1
     fi
     
+    if ! command -v sqlite3 &> /dev/null; then
+        echo -e "${RED}✗ SQLite3 is not installed. Please install SQLite3 first.${NC}"
+        exit 1
+    fi
+    
     NODE_VERSION=$(node --version)
     CLAUDE_VERSION=$(claude --version 2>/dev/null || echo "unknown")
     
     echo -e "${GREEN}✓ Node.js: $NODE_VERSION${NC}"
     echo -e "${GREEN}✓ Claude CLI: $CLAUDE_VERSION${NC}"
+    echo -e "${GREEN}✓ SQLite3: installed${NC}"
     echo
     
     # Setup Node.js service
@@ -170,68 +195,36 @@ setup_all() {
     fi
     echo
     
-    # Test integration
-    echo "Testing integration..."
-    if ! ./test_integration.sh; then
-        echo -e "${YELLOW}⚠ Integration test failed, but continuing setup${NC}"
-    fi
+    # Test queue operations
+    echo "Testing queue operations..."
+    echo -e "${CYAN}Queue Status:${NC}"
+    ./queue_operations.sh status
     echo
     
-    # Setup automation method
-    echo "Choose automation method:"
-    echo "1. macOS LaunchAgent (recommended for macOS)"
-    echo "2. Background daemon"
-    echo "3. Cron job (Linux/Unix)"
-    echo "4. Manual execution only"
+    # Setup automation
+    echo -e "${BLUE}Setting up daemon automation...${NC}"
+    echo "The new architecture uses daemon processes for continuous operation."
+    echo "Daemons provide better control and reliability than cron jobs."
+    echo
+    echo "To start daemons: ./daemon_control.sh start"
+    echo "To check status: ./daemon_control.sh status"
     echo
     
-    read -p "Enter your choice (1-4): " choice
-    
-    case $choice in
-        1)
-            echo "Setting up LaunchAgent..."
-            if ./setup/setup_macos.sh; then
-                echo -e "${GREEN}✓ LaunchAgent setup complete${NC}"
-            else
-                echo -e "${YELLOW}⚠ LaunchAgent setup had issues${NC}"
-            fi
-            ;;
-        2)
-            echo "Starting background daemon..."
-            if ./utils/daemon.sh start; then
-                echo -e "${GREEN}✓ Daemon started${NC}"
-            else
-                echo -e "${YELLOW}⚠ Daemon startup had issues${NC}"
-            fi
-            ;;
-        3)
-            echo "Setting up cron job..."
-            if ./setup/setup.sh; then
-                echo -e "${GREEN}✓ Cron job setup complete${NC}"
-            else
-                echo -e "${YELLOW}⚠ Cron setup had issues${NC}"
-            fi
-            ;;
-        4)
-            echo "Manual setup complete."
-            echo "Run './claude_slack_bot.sh' to execute the bot manually."
-            ;;
-        *)
-            echo -e "${YELLOW}Invalid choice. Skipping automation setup.${NC}"
-            ;;
-    esac
-    
-    echo
     echo -e "${GREEN}🎉 Setup complete!${NC}"
     echo
     show_status
     
     echo
     echo -e "${BLUE}📖 Next Steps:${NC}"
-    echo "1. Edit config.env to customize ALL bot and service settings"
-    echo "2. Check logs with: $0 logs"
-    echo "3. Monitor status with: $0 status"
-    echo "4. View file attachment docs: docs/FILE_ATTACHMENTS.md"
+    echo "1. Start daemons: ./daemon_control.sh start"
+    echo "   (Starts adaptive daemon that intelligently sends or fetches)"
+    echo "2. Monitor queues with: $0 monitor"
+    echo "3. Check daemon status: ./daemon_control.sh status"
+    echo "4. View daemon logs: ./daemon_control.sh logs adaptive"
+    echo "5. Run operations manually if needed:"
+    echo "   - $0 queue fetch    # Fetch from Slack"
+    echo "   - $0 queue process  # Process with Claude"
+    echo "   - $0 queue send     # Send to Slack"
 }
 
 # Function to show comprehensive status
@@ -250,54 +243,45 @@ show_status() {
             echo -e "Service Health:  ${GREEN}● Healthy${NC}"
             
             # Get service info
-            HEALTH_INFO=$(curl -s http://localhost:3030/health 2>/dev/null || echo "{}")
+            HEALTH_INFO=$(curl -s $SERVICE_URL/health 2>/dev/null || echo "{}")
             echo "Last Check:      $(echo "$HEALTH_INFO" | jq -r '.timestamp // "unknown"' 2>/dev/null || echo "unknown")"
         else
             echo -e "Service Health:  ${RED}● Unhealthy${NC}"
         fi
-        
-        # Show file attachment support
-        if curl -s http://localhost:3030/attachments/supported-types > /dev/null 2>&1; then
-            echo -e "File Attachments: ${GREEN}● Supported${NC}"
-        else
-            echo -e "File Attachments: ${YELLOW}● Unknown${NC}"
-        fi
     else
         echo -e "Node.js Service: ${RED}● Stopped${NC}"
         echo -e "Service Health:  ${RED}● N/A${NC}"
-        echo -e "File Attachments: ${RED}● N/A${NC}"
     fi
     
-    # LaunchAgent status
-    LAUNCH_STATUS=$(check_launchagent)
-    if [ "$LAUNCH_STATUS" = "loaded" ]; then
-        echo -e "LaunchAgent:     ${GREEN}● Loaded${NC}"
-        
-        # Show last run info
-        if launchctl list com.claude.slackbot 2>/dev/null | grep -q "LastExitStatus"; then
-            EXIT_STATUS=$(launchctl list com.claude.slackbot 2>/dev/null | grep "LastExitStatus" | awk '{print $3}' | tr -d '";')
-            if [ "$EXIT_STATUS" = "0" ]; then
-                echo -e "Last Exit:       ${GREEN}● Success (0)${NC}"
-            else
-                echo -e "Last Exit:       ${RED}● Error ($EXIT_STATUS)${NC}"
-            fi
-        fi
-    elif [ "$LAUNCH_STATUS" = "not-macos" ]; then
-        echo -e "LaunchAgent:     ${YELLOW}● Not available (Linux/Unix)${NC}"
+    # Queue status
+    echo
+    echo -e "${BLUE}Queue Status:${NC}"
+    QUEUE_STATUS=$(check_queue_status)
+    MESSAGE_COUNT=$(echo $QUEUE_STATUS | cut -d: -f1)
+    RESPONSE_COUNT=$(echo $QUEUE_STATUS | cut -d: -f2)
+    
+    if [ "$MESSAGE_COUNT" -gt 0 ]; then
+        echo -e "Pending Messages:  ${YELLOW}$MESSAGE_COUNT${NC}"
     else
-        echo -e "LaunchAgent:     ${RED}● Not loaded${NC}"
+        echo -e "Pending Messages:  ${GREEN}0${NC}"
     fi
     
-    # Daemon status
-    DAEMON_STATUS=$(check_daemon)
-    if [ "$DAEMON_STATUS" = "running" ]; then
-        echo -e "Background Daemon: ${GREEN}● Running${NC}"
-        if [ -f "$PID_FILE" ]; then
-            PID=$(cat $PID_FILE)
-            echo "Daemon PID:      $PID"
-        fi
+    if [ "$RESPONSE_COUNT" -gt 0 ]; then
+        echo -e "Pending Responses: ${YELLOW}$RESPONSE_COUNT${NC}"
     else
-        echo -e "Background Daemon: ${RED}● Stopped${NC}"
+        echo -e "Pending Responses: ${GREEN}0${NC}"
+    fi
+    
+    # Database info
+    if [ -f "slack-service/data/slack-bot.db" ]; then
+        DB_SIZE=$(du -h slack-service/data/slack-bot.db | cut -f1)
+        TOTAL_MESSAGES=$(sqlite3 slack-service/data/slack-bot.db "SELECT COUNT(*) FROM message_queue;" 2>/dev/null || echo "0")
+        TOTAL_RESPONSES=$(sqlite3 slack-service/data/slack-bot.db "SELECT COUNT(*) FROM responded_messages;" 2>/dev/null || echo "0")
+        echo
+        echo -e "${BLUE}Database:${NC}"
+        echo "Size:              $DB_SIZE"
+        echo "Total Messages:    $TOTAL_MESSAGES"
+        echo "Total Responses:   $TOTAL_RESPONSES"
     fi
     
     # Configuration summary
@@ -317,169 +301,65 @@ show_status() {
     # Recent activity
     echo
     echo -e "${BLUE}Recent Activity:${NC}"
-    if [ -f "logs/claude_slack_bot.log" ]; then
-        LAST_RUN=$(tail -1 logs/claude_slack_bot.log 2>/dev/null | grep -oE '\[.*\]' | head -1 || echo "Never")
-        echo "Last Bot Run:    $LAST_RUN"
-        
-        # Count recent runs (last hour)
-        RECENT_RUNS=$(grep -c "$(date '+%Y-%m-%d %H:')" logs/claude_slack_bot.log 2>/dev/null || echo "0")
-        echo "Runs This Hour:  $RECENT_RUNS"
+    if [ -f "logs/queue_fetcher.log" ]; then
+        LAST_FETCH=$(tail -1 logs/queue_fetcher.log 2>/dev/null | grep -oE '\[.*\]' | head -1 || echo "Never")
+        echo "Last Fetch:      $LAST_FETCH"
+    fi
+    if [ -f "logs/queue_processor.log" ]; then
+        LAST_PROCESS=$(tail -1 logs/queue_processor.log 2>/dev/null | grep -oE '\[.*\]' | head -1 || echo "Never")
+        echo "Last Process:    $LAST_PROCESS"
+    fi
+    if [ -f "logs/queue_sender.log" ]; then
+        LAST_SEND=$(tail -1 logs/queue_sender.log 2>/dev/null | grep -oE '\[.*\]' | head -1 || echo "Never")
+        echo "Last Send:       $LAST_SEND"
+    fi
+}
+
+# Function to monitor queues
+monitor_queues() {
+    if [ -f "utils/monitor_queue.sh" ]; then
+        ./utils/monitor_queue.sh
     else
-        echo "Last Bot Run:    Never"
+        echo -e "${RED}Monitor script not found${NC}"
     fi
-    
-    if [ -f "logs/slack-service.log" ]; then
-        SERVICE_SIZE=$(wc -l < logs/slack-service.log 2>/dev/null || echo "0")
-        echo "Service Log Lines: $SERVICE_SIZE"
-    fi
-}
-
-# Function to start all services
-start_all() {
-    echo -e "${BLUE}Starting all Claude Slack Bot services...${NC}"
-    echo
-    
-    # Start Node.js service first
-    if [ "$(check_node_service)" = "stopped" ]; then
-        if start_node_service; then
-            echo
-        else
-            echo -e "${RED}✗ Failed to start Node.js service${NC}"
-            return 1
-        fi
-    else
-        echo -e "${YELLOW}Node.js service already running${NC}"
-        echo
-    fi
-    
-    # Start automation
-    LAUNCH_STATUS=$(check_launchagent)
-    if [ "$LAUNCH_STATUS" = "loaded" ]; then
-        echo -e "${YELLOW}LaunchAgent already loaded${NC}"
-    elif [ "$LAUNCH_STATUS" = "not-macos" ]; then
-        # On non-macOS systems, use daemon
-        if [ "$(check_daemon)" = "stopped" ] && [ -f "utils/daemon.sh" ]; then
-            echo "Starting background daemon (Linux/Unix mode)..."
-            ./utils/daemon.sh start
-        else
-            echo -e "${YELLOW}Background daemon already running${NC}"
-        fi
-    elif [ -f "$HOME/Library/LaunchAgents/com.claude.slackbot.plist" ]; then
-        echo "Loading LaunchAgent..."
-        launchctl load "$HOME/Library/LaunchAgents/com.claude.slackbot.plist" 2>/dev/null || true
-        if [ "$(check_launchagent)" = "loaded" ]; then
-            echo -e "${GREEN}✓ LaunchAgent loaded${NC}"
-        fi
-    elif [ "$(check_daemon)" = "stopped" ] && [ -f "utils/daemon.sh" ]; then
-        echo "Starting daemon..."
-        ./utils/daemon.sh start
-    fi
-    
-    echo
-    show_status
-}
-
-# Function to stop all services
-stop_all() {
-    echo -e "${BLUE}Stopping all Claude Slack Bot services...${NC}"
-    echo
-    
-    # Stop automation first
-    LAUNCH_STATUS=$(check_launchagent)
-    if [ "$LAUNCH_STATUS" = "loaded" ]; then
-        echo "Unloading LaunchAgent..."
-        launchctl unload "$HOME/Library/LaunchAgents/com.claude.slackbot.plist" 2>/dev/null || true
-        if [ "$(check_launchagent)" = "unloaded" ]; then
-            echo -e "${GREEN}✓ LaunchAgent unloaded${NC}"
-        fi
-    elif [ "$LAUNCH_STATUS" = "not-macos" ]; then
-        # On non-macOS systems, just handle daemon
-        echo "Running on Linux/Unix - LaunchAgent not applicable"
-    fi
-    
-    if [ "$(check_daemon)" = "running" ]; then
-        echo "Stopping daemon..."
-        ./utils/daemon.sh stop
-    fi
-    
-    # Stop Node.js service
-    stop_node_service
-    
-    # Kill any remaining bot processes
-    echo "Cleaning up remaining processes..."
-    pkill -f "claude_slack_bot.sh" 2>/dev/null || true
-    
-    echo
-    echo -e "${GREEN}✓ All services stopped${NC}"
-}
-
-# Function to restart all services
-restart_all() {
-    echo -e "${BLUE}Restarting Claude Slack Bot...${NC}"
-    stop_all
-    echo
-    sleep 2
-    start_all
 }
 
 # Function to view logs with selection menu
 view_logs() {
     echo "Select log to view:"
-    echo "1. Bot execution log (claude_slack_bot.log)"
-    echo "2. Node.js service log (slack-service.log)"
-    echo "3. Service detailed logs (slack-service/logs/combined.log)"
-    echo "4. Error log (claude_slack_bot_errors.log)"
-    echo "5. Daemon log (utils/logs/daemon.log)"
-    echo "6. LaunchAgent logs (Console.app)"
-    echo "7. All logs (tail -f)"
+    echo "1. Queue Fetcher log"
+    echo "2. Queue Processor log"
+    echo "3. Queue Sender log"
+    echo "4. Node.js service log"
+    echo "5. Service detailed logs"
+    echo "6. Error logs"
+    echo "7. All queue logs (tail -f)"
     echo
     
     read -p "Enter your choice (1-7): " choice
     
     case $choice in
         1)
-            if [ -f "logs/claude_slack_bot.log" ]; then
-                tail -f logs/claude_slack_bot.log
-            else
-                echo "No bot execution log found"
-            fi
+            tail -f logs/queue_fetcher.log 2>/dev/null || echo "No fetcher log found"
             ;;
         2)
-            if [ -f "logs/slack-service.log" ]; then
-                tail -f logs/slack-service.log
-            else
-                echo "No service log found"
-            fi
+            tail -f logs/queue_processor.log 2>/dev/null || echo "No processor log found"
             ;;
         3)
-            if [ -f "slack-service/logs/combined.log" ]; then
-                tail -f slack-service/logs/combined.log
-            else
-                echo "No detailed service log found"
-            fi
+            tail -f logs/queue_sender.log 2>/dev/null || echo "No sender log found"
             ;;
         4)
-            if [ -f "logs/claude_slack_bot_errors.log" ]; then
-                tail -f logs/claude_slack_bot_errors.log
-            else
-                echo "No error log found"
-            fi
+            tail -f logs/slack-service.log 2>/dev/null || echo "No service log found"
             ;;
         5)
-            if [ -f "utils/logs/daemon.log" ]; then
-                tail -f utils/logs/daemon.log
-            else
-                echo "No daemon log found"
-            fi
+            tail -f slack-service/logs/combined.log 2>/dev/null || echo "No detailed log found"
             ;;
         6)
-            echo "Opening Console.app to view LaunchAgent logs..."
-            echo "Search for: com.claude.slackbot"
-            open -a Console
+            tail -f logs/*_errors.log slack-service/logs/error.log 2>/dev/null || echo "No error logs found"
             ;;
         7)
-            echo "Tailing all available logs..."
-            tail -f logs/*.log slack-service/logs/*.log utils/logs/*.log 2>/dev/null || echo "Some logs may not exist yet"
+            echo "Tailing all queue logs..."
+            tail -f logs/queue_*.log logs/claude_slack_bot*.log 2>/dev/null || echo "No queue logs found"
             ;;
         *)
             echo "Invalid choice"
@@ -498,6 +378,7 @@ run_diagnostics() {
     echo "Node.js: $(node --version)"
     echo "npm: $(npm --version)"
     echo "Claude: $(claude --version 2>/dev/null || echo 'not found')"
+    echo "SQLite3: $(sqlite3 --version 2>/dev/null || echo 'not found')"
     echo
     
     echo "Service Status:"
@@ -507,8 +388,12 @@ run_diagnostics() {
     echo "File System:"
     echo "Project directory: $SCRIPT_DIR"
     echo "Config file: $([ -f "config.env" ] && echo "✓ exists" || echo "✗ missing")"
+    echo "Database: $([ -f "slack-service/data/slack-bot.db" ] && echo "✓ exists" || echo "✗ missing")"
     echo "Node modules: $([ -d "slack-service/node_modules" ] && echo "✓ installed" || echo "✗ missing")"
-    echo "Config source: Using unified config.env"
+    echo
+    
+    echo "Queue Scripts:"
+    echo "Queue Operations: $([ -x "queue_operations.sh" ] && echo "✓ executable" || echo "✗ not executable")"
     echo
     
     echo "Network Connectivity:"
@@ -518,7 +403,7 @@ run_diagnostics() {
         echo "Slack API: ✗ unreachable"
     fi
     
-    if curl -s --max-time 5 http://localhost:3030/health > /dev/null 2>&1; then
+    if curl -s --max-time 5 $SERVICE_URL/health > /dev/null 2>&1; then
         echo "Local service: ✓ responding"
     else
         echo "Local service: ✗ not responding"
@@ -526,9 +411,9 @@ run_diagnostics() {
     echo
     
     echo "Recent Errors:"
-    if [ -f "logs/claude_slack_bot_errors.log" ]; then
-        echo "Last 3 error entries:"
-        tail -3 logs/claude_slack_bot_errors.log 2>/dev/null || echo "No recent errors"
+    if [ -f "slack-service/logs/error.log" ]; then
+        echo "Last 3 service errors:"
+        tail -3 slack-service/logs/error.log 2>/dev/null || echo "No recent errors"
     else
         echo "No error log found"
     fi
@@ -540,16 +425,21 @@ case "${1:-}" in
         setup_all
         ;;
     start)
-        start_all
+        start_node_service
         ;;
     stop)
-        stop_all
+        stop_node_service
         ;;
     restart)
-        restart_all
+        stop_node_service
+        sleep 2
+        start_node_service
         ;;
     status)
         show_status
+        ;;
+    monitor)
+        monitor_queues
         ;;
     logs)
         view_logs
@@ -557,54 +447,87 @@ case "${1:-}" in
     diagnostics|diag)
         run_diagnostics
         ;;
-    service)
+    daemon|daemons)
+        # Delegate to daemon control script
+        shift
+        ./daemon_control.sh "$@"
+        ;;
+    queue)
         case "${2:-}" in
-            start)
-                start_node_service
+            fetch)
+                run_queue_operation fetch
                 ;;
-            stop)
-                stop_node_service
+            process)
+                run_queue_operation process "${3:-5}"
                 ;;
-            restart)
-                stop_node_service
-                sleep 2
-                start_node_service
+            send)
+                run_queue_operation send "${3:-5}"
+                ;;
+            all)
+                run_queue_operation all "${3:-5}"
+                ;;
+            priority)
+                run_queue_operation priority "${3:-5}"
+                ;;
+            status)
+                ./queue_operations.sh status
                 ;;
             *)
-                echo "Usage: $0 service {start|stop|restart}"
+                echo "Usage: $0 queue {fetch|process|send|all|priority|status} [batch_size]"
+                echo
+                echo "Examples:"
+                echo "  $0 queue fetch        # Fetch messages from Slack"
+                echo "  $0 queue process 10   # Process 10 messages"
+                echo "  $0 queue send 20      # Send 20 responses (PRIORITY)"
+                echo "  $0 queue all 15       # Run all operations with batch 15"
+                echo "  $0 queue priority 10  # Priority mode: send first"
                 ;;
         esac
         ;;
     *)
-        echo -e "${BLUE}Claude Slack Bot Control${NC}"
-        echo "========================"
+        echo -e "${BLUE}Claude Slack Bot Control - Queue Architecture${NC}"
+        echo "=============================================="
         echo
         echo -e "${GREEN}Main Commands:${NC}"
-        echo "  setup       - Complete initial setup (install dependencies, configure, start services)"
-        echo "  start       - Start all services (Node.js + automation)"
-        echo "  stop        - Stop all services"
-        echo "  restart     - Restart all services"
-        echo "  status      - Show detailed status of all components"
+        echo "  setup       - Complete initial setup"
+        echo "  start       - Start Node.js service"
+        echo "  stop        - Stop Node.js service"
+        echo "  restart     - Restart Node.js service"
+        echo "  status      - Show detailed status"
+        echo "  monitor     - Live queue monitoring"
         echo
-        echo -e "${GREEN}Service Management:${NC}"
-        echo "  service start   - Start only the Node.js service"
-        echo "  service stop    - Stop only the Node.js service"  
-        echo "  service restart - Restart only the Node.js service"
+        echo -e "${GREEN}Daemon Commands:${NC}"
+        echo "  daemon start       - Start all daemons"
+        echo "  daemon stop        - Stop all daemons"
+        echo "  daemon status      - Show daemon status"
+        echo "  daemon logs <name> - View daemon logs"
+        echo
+        echo -e "${GREEN}Queue Operations:${NC}"
+        echo "  queue fetch         - Fetch messages from Slack"
+        echo "  queue process [n]   - Process n messages with Claude"
+        echo "  queue send [n]      - Send n responses to Slack (PRIORITY)"
+        echo "  queue all [n]       - Run complete cycle (send first)"
+        echo "  queue priority [n]  - Priority mode: send first, fetch only if needed"
+        echo "  queue status        - Show queue counts"
         echo
         echo -e "${GREEN}Maintenance:${NC}"
-        echo "  logs        - View logs (interactive menu)"
+        echo "  logs        - View logs (interactive)"
         echo "  diagnostics - Run system diagnostics"
         echo
         echo -e "${GREEN}Architecture:${NC}"
-        echo "  • Node.js service handles Slack API operations (port 3030)"
-        echo "  • Claude CLI generates responses to messages"
-        echo "  • Bot script orchestrates the hybrid workflow"
-        echo "  • Supports file attachments, thread conversations, and loop prevention"
+        echo "  • Daemon-based: Continuous operation without cron"
+        echo "  • Adaptive daemon: Sends every minute if pending, else fetches"
+        echo "  • Smart scheduling: No wasted fetch operations"
+        echo "  • Processor: Reads from DB, uses Claude"
+        echo "  • Completely decoupled operations"
+        echo "  • All messages preserved for context"
         echo
         echo -e "${GREEN}Quick Start:${NC}"
-        echo "  $0 setup     # First time setup"
-        echo "  $0 status    # Check if everything is running"
-        echo "  $0 logs      # Monitor activity"
+        echo "  $0 setup          # First time setup"
+        echo "  $0 daemon start   # Start all daemons"
+        echo "  $0 status         # Check system status"
+        echo "  $0 daemon status  # Check daemon status"
+        echo "  $0 monitor        # Watch queue activity"
         echo
         ;;
 esac

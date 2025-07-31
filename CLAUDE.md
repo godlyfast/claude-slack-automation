@@ -40,6 +40,7 @@ The system uses a Node.js service architecture to minimize Claude API usage:
 - **Better Tracking**: SQLite database ensures no duplicate responses
 - **Testable**: Comprehensive unit tests for Node.js components
 - **Scalable**: Can handle multiple channels and high message volumes
+- **Priority System**: Sending responses always takes priority over fetching new messages
 
 ## Common Commands
 
@@ -56,8 +57,13 @@ The system uses a Node.js service architecture to minimize Claude API usage:
 
 ### Manual Testing
 ```bash
-# Run bot once manually
+# Run bot once manually (sends pending responses first)
 ./claude_slack_bot.sh
+
+# Queue operations with priority
+./queue_operations.sh priority  # Send first, fetch only if nothing to send
+./queue_operations.sh send      # Send pending responses (high priority)
+./queue_operations.sh fetch     # Fetch new messages (lower priority)
 
 # Check service health
 curl http://localhost:3030/health
@@ -110,8 +116,13 @@ See docs/ENVIRONMENT_CONFIGURATION.md for complete list of all configuration opt
 7. **MCP Messages**: Handles messages sent via Claude's MCP Slack integration
 8. **Error Handling**: Comprehensive logging in both Node.js and shell script
 9. **Unit Tests**: Full test coverage including new claude-service.js (22 tests)
-10. **Lock Mechanism**: Prevents multiple bot instances from running simultaneously
-11. **Timeout Handling**: Posts helpful message when Claude times out with instructions
+10. **Daemon Architecture**: Uses daemon processes instead of cron for better reliability
+    - Send daemon runs every 30 seconds (high priority)
+    - Process daemon runs every 60 seconds
+    - Fetch daemon runs every 3 minutes (lower priority)
+11. **Priority System**: Send operations always take priority over fetching
+12. **Lock Mechanism**: Prevents multiple bot instances from running simultaneously
+13. **Timeout Handling**: Posts helpful message when Claude times out with instructions
 
 ## Troubleshooting
 

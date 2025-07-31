@@ -157,10 +157,11 @@ class API {
           .filter(c => c))];
 
         // Pre-fetch channel histories
-        const channelHistories = await this.claudeService.prefetchChannelHistories(
-          uniqueChannels,
-          (channel, limit) => this.slackService.getChannelHistory(channel, limit)
-        );
+        // Temporarily disabled to reduce rate limiting
+        const channelHistories = {}; // await this.claudeService.prefetchChannelHistories(
+        //   uniqueChannels,
+        //   (channel, limit) => this.slackService.getChannelHistory(channel, limit)
+        // );
 
         const results = [];
         
@@ -261,6 +262,226 @@ class API {
         });
       } catch (error) {
         handleErrorResponse(res, error, 'warming cache');
+      }
+    });
+
+    // Queue Management Endpoints
+    this.app.post('/queue/messages', async (req, res) => {
+      try {
+        // Fetch and queue unresponded messages
+        const messages = await this.slackService.getUnrespondedMessages();
+        
+        if (messages.length === 0) {
+          return res.json({
+            success: true,
+            fetched: 0,
+            queued: 0,
+            message: 'No new messages to queue'
+          });
+        }
+        
+        // Queue all messages in parallel
+        const results = await Promise.all(
+          messages.map(async (message) => {
+            try {
+              await this.slackService.db.queueMessage(message);
+              return { success: true, messageId: message.id };
+            } catch (error) {
+              // Ignore duplicate key errors
+              if (error.message.includes('UNIQUE constraint')) {
+                return { success: false, messageId: message.id, duplicate: true };
+              }
+              logger.error(`Error queuing message ${message.id}:`, error);
+              return { success: false, messageId: message.id, error: error.message };
+            }
+          })
+        );
+        
+        const queued = results.filter(r => r.success).length;
+        const duplicates = results.filter(r => r.duplicate).length;
+        
+        res.json({
+          success: true,
+          fetched: messages.length,
+          queued,
+          duplicates,
+          results: results.filter(r => !r.success && !r.duplicate)
+        });
+      } catch (error) {
+        handleErrorResponse(res, error, 'fetching messages for queue');
+      }
+    });
+
+    this.app.get('/queue/messages/pending', async (req, res) => {
+      try {
+        const limit = parseInt(req.query.limit) || 10;
+        const messages = await this.slackService.db.getPendingMessages(limit);
+        res.json({
+          success: true,
+          count: messages.length,
+          messages
+        });
+      } catch (error) {
+        handleErrorResponse(res, error, 'getting pending messages');
+      }
+    });
+
+    this.app.post('/queue/process', async (req, res) => {
+      try {
+        // Get batch size from request or use default
+        const batchSize = parseInt(req.body.batchSize) || 5;
+        
+        // Process pending messages from queue (DB only, no API calls)
+        const messages = await this.slackService.db.getPendingMessages(batchSize);
+        
+        if (messages.length === 0) {
+          return res.json({
+            success: true,
+            processed: 0,
+            message: 'No pending messages to process'
+          });
+        }
+        
+        // Mark all messages as processing first (in parallel)
+        await Promise.all(
+          messages.map(msg => 
+            this.slackService.db.updateMessageStatus(msg.message_id, 'processing')
+          )
+        );
+        
+        // Process all messages in parallel
+        const results = await Promise.all(
+          messages.map(async (message) => {
+            try {
+              // Prepare message object (no API calls, just DB data)
+              const messageObj = {
+                id: message.message_id,
+                text: message.text,
+                user: message.user_id,
+                channel: message.channel_id,
+                channelName: message.channel_name,
+                ts: message.message_id,
+                thread_ts: message.thread_ts,
+                isThreadReply: !!message.thread_ts,
+                hasAttachments: message.has_attachments,
+                filePaths: message.file_paths ? JSON.parse(message.file_paths) : []
+              };
+              
+              // Process with Claude (this is the only external call)
+              const response = await this.claudeService.processMessage(messageObj, []);
+              
+              // Queue the response (parallel DB operations)
+              await Promise.all([
+                this.slackService.db.queueResponse(
+                  message.message_id,
+                  message.channel_id,
+                  message.thread_ts,
+                  response
+                ),
+                this.slackService.db.updateMessageStatus(message.message_id, 'processed')
+              ]);
+              
+              return {
+                messageId: message.message_id,
+                success: true
+              };
+            } catch (error) {
+              logger.error(`Failed to process message ${message.message_id}:`, error);
+              await this.slackService.db.updateMessageStatus(message.message_id, 'error', error.message);
+              return {
+                messageId: message.message_id,
+                success: false,
+                error: error.message
+              };
+            }
+          })
+        );
+        
+        res.json({
+          success: true,
+          processed: results.filter(r => r.success).length,
+          failed: results.filter(r => !r.success).length,
+          results
+        });
+      } catch (error) {
+        handleErrorResponse(res, error, 'processing queue messages');
+      }
+    });
+
+    this.app.post('/queue/send-responses', async (req, res) => {
+      try {
+        // Get batch size from request or use default
+        const batchSize = parseInt(req.body.batchSize) || 5;
+        
+        // Get pending responses from queue
+        const responses = await this.slackService.db.getPendingResponses(batchSize);
+        
+        if (responses.length === 0) {
+          return res.json({
+            success: true,
+            sent: 0,
+            message: 'No pending responses to send'
+          });
+        }
+        
+        // Mark all responses as sending first (in parallel)
+        await Promise.all(
+          responses.map(resp => 
+            this.slackService.db.updateResponseStatus(resp.id, 'sending')
+          )
+        );
+        
+        // Send all responses in parallel
+        const results = await Promise.all(
+          responses.map(async (response) => {
+            try {
+              // Post to Slack
+              const message = {
+                channel: response.channel_id,
+                ts: response.message_id,
+                thread_ts: response.thread_ts
+              };
+              
+              await this.slackService.postResponse(message, response.response_text);
+              
+              // Update status to sent
+              await this.slackService.db.updateResponseStatus(response.id, 'sent');
+              
+              return {
+                id: response.id,
+                messageId: response.message_id,
+                success: true
+              };
+            } catch (error) {
+              logger.error(`Failed to send response ${response.id}:`, error);
+              
+              // Check if it's a rate limit error
+              if (error.message && error.message.includes('rate limit')) {
+                // Mark as pending again to retry later
+                await this.slackService.db.updateResponseStatus(response.id, 'pending');
+              } else {
+                // Mark as error for other failures
+                await this.slackService.db.updateResponseStatus(response.id, 'error', error.message);
+              }
+              
+              return {
+                id: response.id,
+                messageId: response.message_id,
+                success: false,
+                error: error.message
+              };
+            }
+          })
+        );
+        
+        res.json({
+          success: true,
+          sent: results.filter(r => r.success).length,
+          failed: results.filter(r => !r.success).length,
+          results
+        });
+      } catch (error) {
+        handleErrorResponse(res, error, 'sending queued responses');
       }
     });
 

@@ -30,13 +30,19 @@ class ClaudeService {
       return response;
     } catch (error) {
       logger.error('Error processing message with Claude:', error);
+      logger.error('Error details:', {
+        message: error.message,
+        code: error.code,
+        stack: error.stack
+      });
       
       // Check if it's a timeout error
       if (error.code === 'TIMEOUT') {
         return this.getTimeoutMessage();
       }
       
-      throw error;
+      // Return a generic error message instead of throwing
+      return 'Execution error';
     }
   }
 

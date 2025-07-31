@@ -4,130 +4,128 @@
 # This version delegates all complex logic to the Node.js service
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/config.env"
 
-# Configuration
-SERVICE_URL="${SERVICE_URL:-http://localhost:3030}"
-LOG_FILE="$SCRIPT_DIR/${LOG_DIR:-logs}/claude_slack_bot.log"
-ERROR_LOG="$SCRIPT_DIR/${LOG_DIR:-logs}/claude_slack_bot_errors.log"
+# Load common functions
+source "$SCRIPT_DIR/scripts/common_functions.sh"
 
-mkdir -p "$SCRIPT_DIR/${LOG_DIR:-logs}"
+# Ensure directories exist
+ensure_directories
 
 # Lock file to prevent concurrent execution
-LOCK_FILE="$SCRIPT_DIR/${LOG_DIR:-logs}/claude_slack_bot.lock"
-
-log_message() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "$LOG_FILE"
-    if [ "$DEBUG_MODE" = "true" ]; then
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"
-    fi
-}
-
-log_error() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: $1" >> "$ERROR_LOG"
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: $1" >&2
-}
+LOCK_FILE="$LOG_DIR/claude_slack_bot.lock"
+BOT_LOG="$LOG_DIR/claude_slack_bot.log"
+BOT_ERROR_LOG="$LOG_DIR/claude_slack_bot_errors.log"
 
 # Cleanup function to remove lock file
 cleanup() {
-    if [ -f "$LOCK_FILE" ]; then
-        rm -f "$LOCK_FILE"
-        log_message "Lock file removed"
-    fi
+    remove_lock "$LOCK_FILE"
+    log "$BOT_LOG" "Lock file removed"
 }
 
 # Set up trap to clean up lock file on exit
 trap cleanup EXIT INT TERM
 
-# Check if another instance is running
-if [ -f "$LOCK_FILE" ]; then
-    # Check if the PID in lock file is still running
-    LOCK_PID=$(cat "$LOCK_FILE" 2>/dev/null)
-    if [ -n "$LOCK_PID" ] && kill -0 "$LOCK_PID" 2>/dev/null; then
-        log_message "Another bot instance is already running (PID: $LOCK_PID). Exiting."
+# Main execution
+main() {
+
+    log "$BOT_LOG" "Claude Slack Bot started"
+    
+    # Check if another instance is running
+    if ! create_lock "$LOCK_FILE"; then
+        LOCK_PID=$(cat "$LOCK_FILE" 2>/dev/null)
+        log "$BOT_LOG" "Another bot instance is already running (PID: $LOCK_PID). Exiting."
         echo "[$(date '+%Y-%m-%d %H:%M:%S')] Another bot instance is already running (PID: $LOCK_PID). Exiting."
         exit 0
-    else
-        log_message "Stale lock file found. Removing it."
-        rm -f "$LOCK_FILE"
     fi
-fi
-
-# Create lock file with current PID
-echo $$ > "$LOCK_FILE"
-
-# Start logging
-log_message "Starting Simplified Claude Slack Bot... (PID: $$)"
-
-# Check if Node.js service is running
-SERVICE_STATUS=$(curl -s --max-time 3 -o /dev/null -w "%{http_code}" "$SERVICE_URL/health" 2>/dev/null)
-if [ "$SERVICE_STATUS" != "200" ]; then
-    log_error "Node.js service is not running at $SERVICE_URL"
-    log_message "Starting Node.js service..."
     
-    # Start the service
-    cd "$SCRIPT_DIR/slack-service"
-    npm start > "$SCRIPT_DIR/logs/slack-service.log" 2>&1 &
-    SERVICE_PID=$!
-    
-    # Wait for service to start
-    sleep 5
-    
-    # Check again
-    SERVICE_STATUS=$(curl -s --max-time 3 -o /dev/null -w "%{http_code}" "$SERVICE_URL/health" 2>/dev/null)
-    if [ "$SERVICE_STATUS" != "200" ]; then
-        log_error "Failed to start Node.js service"
+    # Check if service is running
+    if [ "$(get_service_status)" != "running" ]; then
+        log_error "$BOT_ERROR_LOG" "Node.js service is not running at ${SERVICE_URL}"
         exit 1
     fi
     
-    log_message "Node.js service started with PID $SERVICE_PID"
-fi
-
-# Fetch unresponded messages from Node.js service
-log_message "Fetching unresponded messages..."
-MESSAGES_JSON=$(curl -s --max-time ${API_TIMEOUT:-10} "$SERVICE_URL${UNRESPONDED_ENDPOINT:-/messages/unresponded}")
-
-if [ $? -ne 0 ]; then
-    log_error "Failed to fetch messages from service"
-    exit 1
-fi
-
-# Extract message count
-MESSAGE_COUNT=$(echo "$MESSAGES_JSON" | jq -r '.count // 0')
-log_message "Found $MESSAGE_COUNT unresponded messages"
-
-if [ "$MESSAGE_COUNT" -eq 0 ]; then
-    log_message "No new messages to respond to"
-    exit 0
-fi
-
-# Process messages with Claude via the Node.js service
-log_message "Processing messages with Claude..."
-
-# Send all messages to the Node.js service for processing
-PROCESS_RESULT=$(curl -s --max-time $((${CLAUDE_TIMEOUT:-30} * ${MESSAGE_COUNT} + 30)) \
-    -X POST \
-    -H "Content-Type: application/json" \
-    -d "$MESSAGES_JSON" \
-    "$SERVICE_URL/messages/process-with-claude")
-
-if [ $? -ne 0 ]; then
-    log_error "Failed to process messages with Claude"
-    exit 1
-fi
-
-# Check results
-PROCESSED_COUNT=$(echo "$PROCESS_RESULT" | jq -r '.processed // 0')
-log_message "Processed $PROCESSED_COUNT messages"
-
-# Log any errors
-echo "$PROCESS_RESULT" | jq -r '.results[]? | select(.success == false) | "Failed to process message \(.messageId): \(.error)"' | while read -r error_line; do
-    if [ -n "$error_line" ]; then
-        log_error "$error_line"
+    # PRIORITY: Check if there are pending responses to send first
+    PENDING_RESPONSES=$(get_db_count "response_queue" "status='pending'" 2>/dev/null || echo "0")
+    if [ "$PENDING_RESPONSES" -gt 0 ]; then
+        log "$BOT_LOG" "PRIORITY: Found $PENDING_RESPONSES pending responses. Sending them first..."
+        ./queue_operations.sh send 20
+        log "$BOT_LOG" "Finished sending pending responses"
     fi
-done
 
-log_message "Bot check completed"
-log_message "----------------------------------------"
+    # Get unresponded messages from service
+    log "$BOT_LOG" "Fetching unresponded messages from service..."
+    
+    RESPONSE=$(curl -s --max-time ${API_TIMEOUT:-90} "${SERVICE_URL}${UNRESPONDED_ENDPOINT}")
+    CURL_EXIT=$?
+    
+    if [ $CURL_EXIT -eq 28 ]; then
+        log_error "$BOT_ERROR_LOG" "Request to service timed out after ${API_TIMEOUT:-90} seconds"
+        exit 1
+    elif [ $CURL_EXIT -ne 0 ]; then
+        log_error "$BOT_ERROR_LOG" "Failed to connect to service (curl exit code: $CURL_EXIT)"
+        exit 1
+    fi
+    
+    # Check for error in response
+    if echo "$RESPONSE" | jq -e '.error' >/dev/null 2>&1; then
+        ERROR_MSG=$(echo "$RESPONSE" | jq -r '.error')
+        log_error "$BOT_ERROR_LOG" "Service returned error: $ERROR_MSG"
+        
+        # Check if it's a rate limit error
+        if echo "$ERROR_MSG" | grep -q "rate limit\|too many requests"; then
+            RETRY_AFTER=$(echo "$RESPONSE" | jq -r '.retryAfter // 60')
+            log "$BOT_LOG" "Rate limited. Retry after ${RETRY_AFTER} seconds"
+        fi
+        exit 1
+    fi
+    
+    # Extract messages from response
+    MESSAGE_COUNT=$(echo "$RESPONSE" | jq -r '.count // 0')
+    log "$BOT_LOG" "Found $MESSAGE_COUNT unresponded messages"
+    
+    if [ "$MESSAGE_COUNT" -eq 0 ]; then
+        log "$BOT_LOG" "No messages to process"
+        exit 0
+    fi
+    
+    # Process each message
+    echo "$RESPONSE" | jq -c '.messages[]' | while read -r message; do
+        MESSAGE_ID=$(echo "$message" | jq -r '.id')
+        CHANNEL=$(echo "$message" | jq -r '.channel')
+        USER=$(echo "$message" | jq -r '.user')
+        TEXT=$(echo "$message" | jq -r '.text')
+        THREAD_TS=$(echo "$message" | jq -r '.thread_ts // empty')
+        
+        log "$BOT_LOG" "Processing message $MESSAGE_ID from user $USER in channel $CHANNEL"
+        log_debug "$LOG_DIR/debug.log" "Message text: $TEXT"
+        
+        # Send to service for processing
+        REQUEST_BODY=$(jq -n \
+            --arg messageId "$MESSAGE_ID" \
+            --arg channel "$CHANNEL" \
+            --arg threadTs "$THREAD_TS" \
+            '{messageId: $messageId, channel: $channel, threadTs: $threadTs}')
+        
+        PROCESS_RESPONSE=$(curl -s --max-time ${CLAUDE_TIMEOUT:-120} \
+            -X POST \
+            -H "Content-Type: application/json" \
+            -d "$REQUEST_BODY" \
+            "${SERVICE_URL}${RESPOND_ENDPOINT}")
+        
+        if [ $? -eq 0 ]; then
+            if echo "$PROCESS_RESPONSE" | jq -e '.success' >/dev/null 2>&1; then
+                log "$BOT_LOG" "Successfully processed message $MESSAGE_ID"
+            else
+                ERROR=$(echo "$PROCESS_RESPONSE" | jq -r '.error // "Unknown error"')
+                log_error "$BOT_ERROR_LOG" "Failed to process message $MESSAGE_ID: $ERROR"
+            fi
+        else
+            log_error "$BOT_ERROR_LOG" "Failed to send message $MESSAGE_ID to service"
+        fi
+    done
+    
+    log "$BOT_LOG" "Bot execution completed"
+}
 
-exit 0
+# Run main function
+main "$@"

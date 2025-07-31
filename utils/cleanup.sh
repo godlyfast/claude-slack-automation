@@ -44,7 +44,7 @@ find "$PROJECT_ROOT" -name "*.pyc" -o -name "__pycache__" -o -name "*.pyo" | xar
 echo "📝 Cleaning log files..."
 cd "$PROJECT_ROOT/logs"
 # Remove obsolete logs
-rm -f claude_slack_bot_smart.log claude_slack_bot.log playwright_test.log rate_limit.log 2>/dev/null
+rm -f claude_slack_bot_smart.log playwright_test.log rate_limit.log 2>/dev/null
 rm -f daemon.log cron.log 2>/dev/null
 
 # Show current log sizes
@@ -58,10 +58,19 @@ for log in *.log; do
 done
 
 echo ""
-read -p "Clear active log files? (y/n) " -n 1 -r
+read -p "Clear log files? (y/n) " -n 1 -r
 echo ""
 if [[ $REPLY =~ ^[Yy]$ ]]; then
-    for log in claude_slack_bot.log claude_slack_bot_errors.log launchd.stdout.log launchd.stderr.log; do
+    # Clear queue logs
+    for log in queue_fetcher.log queue_processor.log queue_sender.log claude_slack_bot_v2.log claude_slack_bot_v2_errors.log; do
+        if [ -f "$log" ]; then
+            echo "" > "$log"
+            echo "  ✓ Cleared $log"
+        fi
+    done
+    
+    # Clear service logs
+    for log in slack-service.log; do
         if [ -f "$log" ]; then
             echo "" > "$log"
             echo "  ✓ Cleared $log"
@@ -72,7 +81,7 @@ fi
 # Clean PID files
 echo ""
 echo "🔧 Cleaning PID files..."
-rm -f "$PROJECT_ROOT/utils/.daemon.pid" 2>/dev/null
+rm -f "$PROJECT_ROOT/slack-service/.service.pid" 2>/dev/null
 rm -f "$PROJECT_ROOT"/*.pid 2>/dev/null
 
 # Calculate space after cleanup

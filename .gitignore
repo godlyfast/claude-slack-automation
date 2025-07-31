@@ -149,7 +149,8 @@ slack-service/.service.pid
 send_*.js
 send_*.sh
 test_*.sh
-!test_integration.sh
+!test_integration_simple.sh
+!test_full_integration.sh
 
 # Temporary documentation
 *.md.tmp

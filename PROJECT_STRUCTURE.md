@@ -131,7 +131,7 @@ claude-slack-automation/
 - CHANGELOG.md                  # Standard naming
 
 ❌ BAD:
-- claude_slack_bot_v2.sh        # Version numbers = clutter
+- test_script_v2.sh             # Version numbers = clutter
 - test_something.sh             # Vague test files
 - fix_issue_temp.sh            # Temporary fixes
 - old_backup.sh                # Backups don't belong here

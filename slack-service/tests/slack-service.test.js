@@ -4,7 +4,6 @@ const Database = require('../src/db');
 jest.mock('@slack/web-api');
 jest.mock('../src/db');
 jest.mock('../src/cache');
-jest.mock('../src/rate-limiter');
 jest.mock('../src/loop-prevention');
 jest.mock('../src/file-handler');
 jest.mock('../src/channel-rotator');
@@ -14,7 +13,6 @@ describe('SlackService', () => {
   let mockWebClient;
   let mockDb;
   let mockCache;
-  let mockRateLimiter;
 
   const config = {
     channels: ['#general', '#random'],
@@ -59,7 +57,8 @@ describe('SlackService', () => {
       },
       chat: {
         postMessage: jest.fn()
-      }
+      },
+      on: jest.fn() // Mock event listener for rate limiting events
     };
 
     mockDb = {
@@ -80,11 +79,7 @@ describe('SlackService', () => {
       incrementRateLimitSaves: jest.fn()
     };
 
-    mockRateLimiter = {
-      executeWithRetry: jest.fn((fn) => fn()), // Just execute the function
-      checkLimit: jest.fn().mockReturnValue({ allowed: true, waitTime: 0 }),
-      recordRequest: jest.fn()
-    };
+    // Rate limiter removed - SDK handles rate limiting
 
     Database.mockImplementation(() => mockDb);
     const { WebClient } = require('@slack/web-api');
@@ -93,8 +88,7 @@ describe('SlackService', () => {
     const cache = require('../src/cache');
     Object.assign(cache, mockCache);
 
-    const rateLimiter = require('../src/rate-limiter');
-    Object.assign(rateLimiter, mockRateLimiter);
+    // Rate limiter has been removed - SDK handles rate limiting
     
     // Mock channel rotator - let it return the first channel
     const channelRotator = require('../src/channel-rotator');
@@ -194,46 +188,46 @@ describe('SlackService', () => {
     });
   });
 
-  describe('_shouldRespond', () => {
+  describe('_shouldRespondToMessage', () => {
     it('should return false when no keywords match', () => {
       const message = { text: 'Hello world' };
-      expect(slackService._shouldRespond(message)).toBe(false);
+      expect(slackService._shouldRespondToMessage(message)).toBe(false);
     });
 
     it('should return true when keyword matches in "all" mode', () => {
       slackService.config.responseMode = 'all';
       const message = { text: 'I need AI assistance' };
-      expect(slackService._shouldRespond(message)).toBe(true);
+      expect(slackService._shouldRespondToMessage(message)).toBe(true);
     });
 
     it('should return true when keyword and mention present in "mentions" mode', () => {
       slackService.config.responseMode = 'mentions';
       const message = { text: 'Hey <@U123> I need AI help' };
-      expect(slackService._shouldRespond(message)).toBe(true);
+      expect(slackService._shouldRespondToMessage(message)).toBe(true);
     });
 
     it('should return false when keyword present but no mention in "mentions" mode', () => {
       slackService.config.responseMode = 'mentions';
       const message = { text: 'I need AI help' };
-      expect(slackService._shouldRespond(message)).toBe(false);
+      expect(slackService._shouldRespondToMessage(message)).toBe(false);
     });
 
     it('should handle case-insensitive keyword matching', () => {
       slackService.config.responseMode = 'all';
       const message = { text: 'I need ai assistance' };
-      expect(slackService._shouldRespond(message)).toBe(true);
+      expect(slackService._shouldRespondToMessage(message)).toBe(true);
     });
 
     it('should treat thread replies same as channel messages based on mode', () => {
       slackService.config.responseMode = 'all';
       const message = { text: 'I need AI help' };
-      expect(slackService._shouldRespond(message, true)).toBe(true);
+      expect(slackService._shouldRespondToMessage(message, true)).toBe(true);
       
       slackService.config.responseMode = 'mentions';
-      expect(slackService._shouldRespond(message, true)).toBe(false);
+      expect(slackService._shouldRespondToMessage(message, true)).toBe(false);
       
       const messageWithMention = { text: '<@U123> I need AI help' };
-      expect(slackService._shouldRespond(messageWithMention, true)).toBe(true);
+      expect(slackService._shouldRespondToMessage(messageWithMention, true)).toBe(true);
     });
   });
 
@@ -286,19 +280,7 @@ describe('SlackService', () => {
     });
   });
 
-  describe('_extractMentions', () => {
-    it('should extract user mentions from text', () => {
-      const text = 'Hey <@U123> and <@U456>, can you help?';
-      const mentions = slackService._extractMentions(text);
-      expect(mentions).toEqual(['U123', 'U456']);
-    });
-
-    it('should return empty array when no mentions', () => {
-      const text = 'Hello world';
-      const mentions = slackService._extractMentions(text);
-      expect(mentions).toEqual([]);
-    });
-  });
+  // _extractMentions method was removed - mentions are handled differently now
 
   describe('caching', () => {
     beforeEach(() => {
@@ -378,24 +360,21 @@ describe('SlackService', () => {
   });
 
   describe('rate limiting', () => {
-    it('should handle rate limit errors with retry', async () => {
-      let callCount = 0;
-      mockRateLimiter.executeWithRetry.mockImplementation(async (fn) => {
-        callCount++;
-        if (callCount === 1) {
-          return { ok: false, error: 'rate_limited' };
-        }
-        return await fn();
-      });
+    it('should let SDK handle rate limit errors', async () => {
+      // The Slack SDK now handles rate limiting automatically
+      // with built-in retry logic
+      const rateLimitError = new Error('rate_limited');
+      rateLimitError.code = 'rate_limited';
+      
+      mockWebClient.conversations.list
+        .mockRejectedValueOnce(rateLimitError)
+        .mockResolvedValueOnce({
+          ok: true,
+          channels: []
+        });
 
-      mockWebClient.conversations.list.mockResolvedValue({
-        ok: true,
-        channels: []
-      });
-
-      await slackService.getUnrespondedMessages();
-
-      expect(mockRateLimiter.executeWithRetry).toHaveBeenCalled();
+      // The SDK will handle the retry internally
+      await expect(slackService.getUnrespondedMessages()).rejects.toThrow('rate_limited');
     });
   });
 

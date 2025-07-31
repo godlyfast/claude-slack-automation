@@ -13,7 +13,8 @@ This automation uses a Node.js service to monitor Slack channels and threads, wh
 - **Thread Support**: Full conversation context across channel messages and thread replies
 - **Loop Prevention**: 8-layer anti-loop system prevents infinite responses
 - **REST API**: Clean interface between components with new `/messages/process-with-claude` endpoint
-- **Simplified Bash Script**: Now just a thin wrapper that delegates all complex logic to Node.js
+- **Daemon Architecture**: Uses daemon processes instead of cron for continuous operation
+- **Priority System**: Send operations run every 30 seconds for quick response delivery
 
 ## Prerequisites
 
@@ -42,11 +43,16 @@ This automation uses a Node.js service to monitor Slack channels and threads, wh
 # Complete setup (does everything for you)
 ./bot_control.sh setup
 
+# Start daemon processes
+./daemon_control.sh start
+
 # Check status
 ./bot_control.sh status
+./daemon_control.sh status
 
 # View logs
 ./bot_control.sh logs
+./daemon_control.sh logs all
 
 # Start/stop services
 ./bot_control.sh start
