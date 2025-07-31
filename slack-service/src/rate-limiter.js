@@ -68,7 +68,7 @@ class RateLimiter {
    */
   calculateBackoff(attempt, baseDelay = 1000) {
     // Exponential backoff with jitter
-    const exponentialDelay = Math.min(baseDelay * Math.pow(2, attempt - 1), 300000); // Max 5 minutes
+    const exponentialDelay = Math.min(baseDelay * Math.pow(2, attempt - 1), parseInt(process.env.MAX_BACKOFF_MS || 300000)); // Max backoff from config
     const jitter = Math.random() * 1000; // 0-1 second jitter
     return exponentialDelay + jitter;
   }
@@ -149,7 +149,7 @@ class RateLimiter {
         
         // For other errors, use exponential backoff
         if (attempt < maxRetries) {
-          const delay = Math.min(this.calculateBackoff(attempt), 3000); // Max 3 seconds
+          const delay = Math.min(this.calculateBackoff(attempt), parseInt(process.env.REQUEST_TIMEOUT_MS || 3000)); // Max timeout from config
           logger.warn(`Request failed, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})`);
           await this.sleep(delay);
           continue;

@@ -95,9 +95,9 @@ describe('FileHandler', () => {
   });
 
   describe('formatAttachmentsForClaude', () => {
-    test('should return empty string for no attachments', () => {
+    test('should return empty object for no attachments', () => {
       const result = fileHandler.formatAttachmentsForClaude([]);
-      expect(result).toBe('');
+      expect(result).toEqual({ context: '', filePaths: [] });
     });
 
     test('should format text file attachments', () => {
@@ -110,10 +110,10 @@ describe('FileHandler', () => {
       }];
 
       const result = fileHandler.formatAttachmentsForClaude(attachments);
-      expect(result).toContain('📎 **Message Attachments:**');
-      expect(result).toContain('**script.js**');
-      expect(result).toContain('```js');
-      expect(result).toContain('console.log("Hello world");');
+      expect(result.context).toContain('📎 **Message Attachments:**');
+      expect(result.context).toContain('**script.js**');
+      expect(result.context).toContain('```js');
+      expect(result.context).toContain('console.log("Hello world");');
     });
 
     test('should format image attachments', () => {
@@ -126,8 +126,8 @@ describe('FileHandler', () => {
       }];
 
       const result = fileHandler.formatAttachmentsForClaude(attachments);
-      expect(result).toContain('**photo.png**');
-      expect(result).toContain('[Image content available for analysis]');
+      expect(result.context).toContain('**photo.png**');
+      expect(result.context).toContain('[File processing incomplete - photo.png]');
     });
 
     test('should format error attachments', () => {
@@ -138,8 +138,8 @@ describe('FileHandler', () => {
       }];
 
       const result = fileHandler.formatAttachmentsForClaude(attachments);
-      expect(result).toContain('**error.txt**');
-      expect(result).toContain('❌ File too large (max 10MB)');
+      expect(result.context).toContain('**error.txt**');
+      expect(result.context).toContain('❌ File too large (max 10MB)');
     });
 
     test('should format unsupported attachments', () => {
@@ -150,8 +150,8 @@ describe('FileHandler', () => {
       }];
 
       const result = fileHandler.formatAttachmentsForClaude(attachments);
-      expect(result).toContain('**document.docx**');
-      expect(result).toContain('⚠️ Unsupported file type (.docx)');
+      expect(result.context).toContain('**document.docx**');
+      expect(result.context).toContain('⚠️ Unsupported file type (.docx)');
     });
   });
 

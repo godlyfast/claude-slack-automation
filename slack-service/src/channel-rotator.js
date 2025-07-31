@@ -42,8 +42,8 @@ class ChannelRotator {
     const now = Date.now();
     const timeSinceLastRun = now - this.state.lastRunTime;
     
-    // If it's been more than 5 minutes, check all channels
-    if (timeSinceLastRun > 300000) {
+    // If it's been more than the stale time, check all channels
+    if (timeSinceLastRun > parseInt(process.env.CHANNEL_STALE_TIME_MS || 300000)) {
       this.state.lastRunTime = now;
       await this.saveState();
       return allChannels.slice(0, maxChannels);
@@ -78,7 +78,7 @@ class ChannelRotator {
    * @param {number} maxAge - Maximum age in milliseconds
    * @returns {string[]} Channels that need checking
    */
-  getStaleChannels(allChannels, maxAge = 300000) {
+  getStaleChannels(allChannels, maxAge = parseInt(process.env.CHANNEL_STALE_TIME_MS || 300000)) {
     const now = Date.now();
     return allChannels.filter(channel => {
       const lastChecked = this.state.channelHistory[channel] || 0;

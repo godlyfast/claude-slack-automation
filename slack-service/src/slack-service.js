@@ -6,6 +6,7 @@ const rateLimiter = require('./rate-limiter');
 const channelRotator = require('./channel-rotator');
 const LoopPreventionSystem = require('./loop-prevention');
 const FileHandler = require('./file-handler');
+const { createTimeoutPromise } = require('./utils');
 
 class SlackService {
   constructor(token, config) {
@@ -107,7 +108,7 @@ class SlackService {
         }
       }
 
-      // Use rate limiter for API call with 3 second timeout
+      // Use rate limiter for API call with timeout
       const result = await rateLimiter.executeWithRetry(
         async () => Promise.race([
           this.client.conversations.history({
@@ -116,9 +117,7 @@ class SlackService {
             limit: this.config.maxMessages,
             inclusive: false
           }),
-          new Promise((_, reject) => 
-            setTimeout(() => reject(new Error(`Slack API timeout after ${(parseInt(process.env.API_TIMEOUT) || 10)} seconds`)), (parseInt(process.env.API_TIMEOUT) || 10) * 1000)
-          )
+          createTimeoutPromise(null, 'Slack API conversations.history timeout')
         ]),
         'conversations.history'
       );
@@ -209,9 +208,7 @@ class SlackService {
             types: 'public_channel,private_channel',
             limit: 1000
           }),
-          new Promise((_, reject) => 
-            setTimeout(() => reject(new Error(`Slack API timeout after ${(parseInt(process.env.API_TIMEOUT) || 10)} seconds`)), (parseInt(process.env.API_TIMEOUT) || 10) * 1000)
-          )
+          createTimeoutPromise(null, 'Slack API conversations.list timeout')
         ]),
         'conversations.list'
       );
@@ -399,9 +396,7 @@ class SlackService {
             thread_ts: message.thread_ts,
             as_user: true // Important for user tokens (xoxp)
           }),
-          new Promise((_, reject) => 
-            setTimeout(() => reject(new Error(`Slack API timeout after ${(parseInt(process.env.API_TIMEOUT) || 10)} seconds`)), (parseInt(process.env.API_TIMEOUT) || 10) * 1000)
-          )
+          createTimeoutPromise(null, 'Slack API chat.postMessage timeout')
         ]),
         'chat.postMessage'
       );

@@ -5,6 +5,8 @@ jest.mock('@slack/web-api');
 jest.mock('../src/db');
 jest.mock('../src/cache');
 jest.mock('../src/rate-limiter');
+jest.mock('../src/loop-prevention');
+jest.mock('../src/file-handler');
 
 describe('SlackService', () => {
   let slackService;
@@ -22,8 +24,28 @@ describe('SlackService', () => {
     cacheEnabled: false // Disable cache for most tests
   };
 
-  beforeEach(() => {
+  beforeEach(async () => {
     jest.clearAllMocks();
+    
+    // Mock LoopPreventionSystem
+    const mockLoopPrevention = {
+      checkAndRecordMessage: jest.fn().mockResolvedValue({ allowed: true }),
+      recordBotResponse: jest.fn(),
+      getStatus: jest.fn().mockReturnValue({}),
+      activateEmergencyStop: jest.fn(),
+      deactivateEmergencyStop: jest.fn(),
+      isEmergencyStopped: jest.fn().mockReturnValue(false),
+      validateResponseContent: jest.fn().mockReturnValue({ modified: false, cleaned: null })
+    };
+    require('../src/loop-prevention').mockImplementation(() => mockLoopPrevention);
+    
+    // Mock FileHandler
+    const mockFileHandler = {
+      init: jest.fn().mockResolvedValue(undefined),
+      processAttachments: jest.fn().mockResolvedValue([]),
+      formatAttachmentsForClaude: jest.fn().mockReturnValue({ context: '', filePaths: [] })
+    };
+    require('../src/file-handler').mockImplementation(() => mockFileHandler);
 
     mockWebClient = {
       conversations: {
@@ -43,7 +65,8 @@ describe('SlackService', () => {
       close: jest.fn(),
       trackThread: jest.fn(),
       getActiveThreads: jest.fn(),
-      updateThreadLastChecked: jest.fn()
+      updateThreadLastChecked: jest.fn(),
+      recordBotResponse: jest.fn()
     };
 
     mockCache = {
@@ -71,6 +94,7 @@ describe('SlackService', () => {
     Object.assign(rateLimiter, mockRateLimiter);
 
     slackService = new SlackService('test-token', config);
+    await slackService.init(); // Initialize file handler
   });
 
   describe('getUnrespondedMessages', () => {
@@ -323,7 +347,7 @@ describe('SlackService', () => {
       expect(mockCache.set).toHaveBeenCalledWith(
         'channels:list',
         [{ id: 'C123', name: 'general' }],
-        300 // Default channel cache TTL
+        3600 // Default channel cache TTL in slack-service.js
       );
     });
 

@@ -1,42 +1,23 @@
-// Load config.env from project root instead of local .env
+// Load config.env from project root
 require('dotenv').config({ path: require('path').join(__dirname, '../../config.env') });
 const SlackService = require('./slack-service');
 const API = require('./api');
 const logger = require('./logger');
-const fs = require('fs');
-const path = require('path');
 
-async function loadConfig() {
-  const configPath = path.join(__dirname, '../../config.env');
-  
-  if (!fs.existsSync(configPath)) {
-    throw new Error('config.env not found');
-  }
-
-  const configContent = fs.readFileSync(configPath, 'utf8');
-  const config = {};
-
-  configContent.split('\n').forEach(line => {
-    if (line && !line.startsWith('#') && line.includes('=')) {
-      const [key, value] = line.split('=').map(s => s.trim());
-      config[key] = value.replace(/["']/g, '');
-      // Also set as environment variable for loop prevention config
-      process.env[key] = config[key];
-    }
-  });
-
+function loadConfig() {
+  // All config is already loaded into process.env by dotenv
   return {
-    channels: (config.SLACK_CHANNELS || config.SLACK_CHANNEL || '').split(',').map(c => c.trim()),
-    triggerKeywords: (config.TRIGGER_KEYWORDS || '').split(',').map(k => k.trim()),
-    responseMode: config.RESPONSE_MODE || 'mentions',
-    maxMessages: parseInt(config.MAX_MESSAGES) || 15,
-    checkWindow: parseInt(config.CHECK_WINDOW) || 5,
-    // Cache configuration from environment
+    channels: (process.env.SLACK_CHANNELS || '').split(',').map(c => c.trim()).filter(c => c),
+    triggerKeywords: (process.env.TRIGGER_KEYWORDS || '').split(',').map(k => k.trim()).filter(k => k),
+    responseMode: process.env.RESPONSE_MODE || 'mentions',
+    maxMessages: parseInt(process.env.MAX_MESSAGES) || 15,
+    checkWindow: parseInt(process.env.CHECK_WINDOW) || 5,
+    // Cache configuration
     channelCacheTTL: parseInt(process.env.CHANNEL_CACHE_TTL) || 300,
     messageCacheTTL: parseInt(process.env.MESSAGE_CACHE_TTL) || 30,
     cacheEnabled: process.env.CACHE_ENABLED !== 'false',
-    // Bot token for reading (optional)
-    botToken: config.SLACK_BOT_TOKEN || null
+    // Bot token for reading
+    botToken: process.env.SLACK_BOT_TOKEN || null
   };
 }
 
@@ -55,7 +36,7 @@ async function main() {
       logger.warn('Using user token (xoxp). Some features may be limited. Consider using a bot token (xoxb) for full functionality.');
     }
 
-    const config = await loadConfig();
+    const config = loadConfig();
     logger.info('Starting Claude Slack Service with config:', config);
 
     const slackService = new SlackService(slackToken, config);
@@ -63,7 +44,7 @@ async function main() {
     
     const api = new API(slackService);
 
-    const port = process.env.PORT || 3030;
+    const port = process.env.SERVICE_PORT || process.env.PORT || 3030;
     api.start(port);
 
     // Warm up the cache on startup

@@ -1,6 +1,7 @@
 const express = require('express');
 const SlackService = require('./slack-service');
 const logger = require('./logger');
+const { withTimeout, handleErrorResponse } = require('./utils');
 
 class API {
   constructor(slackService) {
@@ -25,14 +26,15 @@ class API {
 
     this.app.get('/messages/unresponded', async (req, res) => {
       try {
-        // Add timeout from config
-        const apiTimeout = (parseInt(process.env.API_TIMEOUT) || 10) * 1000;
-        const timeoutPromise = new Promise((_, reject) => 
-          setTimeout(() => reject(new Error(`Request timed out after ${apiTimeout/1000} seconds`)), apiTimeout)
+        // Add timeout from config - use API_TIMEOUT (in seconds) or REQUEST_TIMEOUT_MS (in ms)
+        const timeoutMs = process.env.API_TIMEOUT 
+          ? parseInt(process.env.API_TIMEOUT) * 1000 
+          : parseInt(process.env.REQUEST_TIMEOUT_MS) || 3000;
+          
+        const messages = await withTimeout(
+          this.slackService.getUnrespondedMessages(),
+          timeoutMs
         );
-        
-        const messagesPromise = this.slackService.getUnrespondedMessages();
-        const messages = await Promise.race([messagesPromise, timeoutPromise]);
         
         res.json({
           success: true,
@@ -40,11 +42,7 @@ class API {
           messages
         });
       } catch (error) {
-        logger.error('Error getting unresponded messages:', error);
-        res.status(500).json({
-          success: false,
-          error: error.message
-        });
+        handleErrorResponse(res, error, 'getting unresponded messages');
       }
     });
 
@@ -65,11 +63,7 @@ class API {
           result
         });
       } catch (error) {
-        logger.error('Error posting response:', error);
-        res.status(500).json({
-          success: false,
-          error: error.message
-        });
+        handleErrorResponse(res, error, 'posting response');
       }
     });
 
@@ -83,11 +77,7 @@ class API {
           messages
         });
       } catch (error) {
-        logger.error('Error getting responded messages:', error);
-        res.status(500).json({
-          success: false,
-          error: error.message
-        });
+        handleErrorResponse(res, error, 'getting responded messages');
       }
     });
 
@@ -101,11 +91,7 @@ class API {
           timestamp: new Date().toISOString()
         });
       } catch (error) {
-        logger.error('Error getting loop prevention status:', error);
-        res.status(500).json({
-          success: false,
-          error: error.message
-        });
+        handleErrorResponse(res, error, 'getting loop prevention status');
       }
     });
 
@@ -120,11 +106,7 @@ class API {
           timestamp: new Date().toISOString()
         });
       } catch (error) {
-        logger.error('Error activating emergency stop:', error);
-        res.status(500).json({
-          success: false,
-          error: error.message
-        });
+        handleErrorResponse(res, error, 'activating emergency stop');
       }
     });
 
@@ -137,11 +119,7 @@ class API {
           timestamp: new Date().toISOString()
         });
       } catch (error) {
-        logger.error('Error deactivating emergency stop:', error);
-        res.status(500).json({
-          success: false,
-          error: error.message
-        });
+        handleErrorResponse(res, error, 'deactivating emergency stop');
       }
     });
 
@@ -171,13 +149,16 @@ class API {
         const { channel } = req.params;
         const limit = parseInt(req.query.limit) || 100;
         
-        // Add 10 second timeout for history fetch
-        const timeoutPromise = new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Request timed out after 10 seconds')), 10000)
+        // Use longer timeout for history (3x normal timeout)
+        const timeoutMs = process.env.API_TIMEOUT 
+          ? parseInt(process.env.API_TIMEOUT) * 3000 
+          : (parseInt(process.env.REQUEST_TIMEOUT_MS) || 3000) * 3;
+          
+        const history = await withTimeout(
+          this.slackService.getChannelHistory(channel, limit),
+          timeoutMs,
+          'Channel history request timed out'
         );
-        
-        const historyPromise = this.slackService.getChannelHistory(channel, limit);
-        const history = await Promise.race([historyPromise, timeoutPromise]);
         
         res.json({
           success: true,
@@ -186,11 +167,7 @@ class API {
           messages: history
         });
       } catch (error) {
-        logger.error('Error getting channel history:', error);
-        res.status(500).json({ 
-          success: false, 
-          error: error.message 
-        });
+        handleErrorResponse(res, error, 'getting channel history');
       }
     });
 
@@ -210,11 +187,7 @@ class API {
           message: 'Cache warmed up'
         });
       } catch (error) {
-        logger.error('Error warming cache:', error);
-        res.status(500).json({
-          success: false,
-          error: error.message
-        });
+        handleErrorResponse(res, error, 'warming cache');
       }
     });
 
@@ -231,7 +204,7 @@ class API {
     });
   }
 
-  start(port = 3030) {
+  start(port = process.env.SERVICE_PORT || process.env.PORT || 3030) {
     this.server = this.app.listen(port, () => {
       logger.info(`API server listening on port ${port}`);
     });
