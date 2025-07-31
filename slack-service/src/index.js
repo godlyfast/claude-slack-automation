@@ -32,8 +32,8 @@ async function main() {
     const tokenType = slackToken.startsWith('xoxb-') ? 'bot' : 'user';
     logger.info(`Using Slack ${tokenType} token`);
     
-    if (tokenType === 'user') {
-      logger.warn('Using user token (xoxp). Some features may be limited. Consider using a bot token (xoxb) for full functionality.');
+    if (tokenType === 'bot') {
+      logger.warn('Bot tokens (xoxb) cannot access private channels. User tokens (xoxp) are required for private channel access.');
     }
 
     const config = loadConfig();

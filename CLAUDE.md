@@ -17,15 +17,21 @@ The system uses a Node.js service architecture to minimize Claude API usage:
    - Tracks responded messages in SQLite database
    - Filters messages based on keywords and mentions
    - Provides REST API for the shell script
-   - Runs on port 3000 by default
+   - Runs on port 3030 by default (configurable via SERVICE_PORT)
 
-2. **Shell Script** (`claude_slack_bot.sh`):
-   - Checks if Node.js service is running
-   - Fetches unresponded messages via API
-   - Passes messages to Claude for response generation
-   - Posts responses back through the service
+2. **Claude Service** (`slack-service/src/claude-service.js`):
+   - NEW: Handles all Claude interaction logic
+   - Builds instruction prompts with context
+   - Manages Claude CLI execution with timeout
+   - Pre-fetches channel histories for efficiency
+   - Filters file paths by channel for security
 
-3. **Configuration** (`config.env`):
+3. **Shell Script** (`claude_slack_bot.sh`):
+   - Simplified to ~130 lines (from ~400)
+   - Only handles: lock files, service health checks, API calls
+   - Delegates all complex logic to Node.js service
+
+4. **Configuration** (`config.env`):
    - Shared configuration for channels, keywords, and behavior
    - Used by both shell script and Node.js service
 
@@ -93,13 +99,19 @@ See docs/ENVIRONMENT_CONFIGURATION.md for complete list of all configuration opt
 1. **Node.js Service**: Handles all Slack API operations to minimize Claude usage
 2. **SQLite Database**: Tracks responded messages reliably
 3. **REST API**: Clean interface between shell script and Node.js service
-4. **Claude Focus**: Claude only generates response text - no Slack tool usage
-5. **Private Channels**: Supports both public and private channels
-6. **MCP Messages**: Handles messages sent via Claude's MCP Slack integration
-7. **Error Handling**: Comprehensive logging in both Node.js and shell script
-8. **Unit Tests**: Full test coverage for Node.js components
-9. **Lock Mechanism**: Prevents multiple bot instances from running simultaneously
-10. **Timeout Handling**: Posts helpful message when Claude times out with instructions
+   - NEW endpoint: `POST /messages/process-with-claude` - Processes multiple messages in one request
+   - Handles channel history pre-fetching, file filtering, and Claude execution
+4. **Claude Service Module**: New centralized module for Claude interactions
+   - `buildClaudeInstruction()`: Constructs prompts with channel/thread context
+   - `executeClaude()`: Manages CLI execution with proper timeout handling
+   - `prefetchChannelHistories()`: Optimizes API calls by batching history fetches
+5. **Claude Focus**: Claude only generates response text - no Slack tool usage
+6. **Private Channels**: Supports both public and private channels
+7. **MCP Messages**: Handles messages sent via Claude's MCP Slack integration
+8. **Error Handling**: Comprehensive logging in both Node.js and shell script
+9. **Unit Tests**: Full test coverage including new claude-service.js (22 tests)
+10. **Lock Mechanism**: Prevents multiple bot instances from running simultaneously
+11. **Timeout Handling**: Posts helpful message when Claude times out with instructions
 
 ## Troubleshooting
 
@@ -115,12 +127,10 @@ Common issues:
 - **LaunchAgent not running**: Check Console.app for errors, ensure Terminal has Full Disk Access
 - **Permissions**: All scripts need execute permission (`chmod +x *.sh`)
 
-### Required Slack Bot Scopes
-- `channels:history` - Read channel messages
-- `channels:read` - List channels
-- `chat:write` - Post messages
-- `im:history` - Read DMs (if monitoring DMs)
-- `groups:history` - Read private channels (if monitoring private channels)
+### Required Slack Token Type
+- **MUST use Slack user token (xoxp)** - Bot tokens cannot access private channels
+- User tokens automatically have access to all channels you're a member of
+- No additional scopes needed - user tokens inherit your Slack permissions
 
 ## 🚨 IMPORTANT: Codebase Maintenance Rules
 

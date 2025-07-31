@@ -6,7 +6,7 @@
 claude-slack-automation/
 ├── 🤖 Core Files (Root)
 │   ├── bot_control.sh               # Central management script - RECOMMENDED
-│   ├── claude_slack_bot.sh         # Main bot script - DO NOT DUPLICATE
+│   ├── claude_slack_bot.sh         # Simplified bot script (~130 lines) - DO NOT DUPLICATE
 │   ├── config.env                   # Configuration - SINGLE SOURCE OF TRUTH
 │   ├── com.claude.slackbot.plist    # macOS LaunchAgent config
 │   └── test_integration.sh          # Basic integration test
@@ -24,12 +24,25 @@ claude-slack-automation/
 │   ├── src/                         # Source code
 │   │   ├── index.js                 # Main server
 │   │   ├── slack-service.js         # Slack API wrapper
+│   │   ├── claude-service.js        # Claude interaction handler (NEW)
+│   │   ├── api.js                   # REST API endpoints
 │   │   ├── db.js                    # SQLite database
-│   │   └── loop-prevention.js       # Anti-loop system
+│   │   ├── loop-prevention.js       # Anti-loop system
+│   │   ├── file-handler.js          # File attachment handler
+│   │   ├── cache.js                 # Caching system
+│   │   ├── rate-limiter.js          # Rate limiting
+│   │   ├── logger.js                # Logging utility
+│   │   └── utils.js                 # Shared utilities
 │   ├── tests/                       # Unit tests
+│   │   ├── slack-service.test.js
+│   │   ├── claude-service.test.js   # Tests for Claude service (NEW)
+│   │   ├── api.test.js
+│   │   ├── db.test.js
+│   │   ├── file-handler.test.js
+│   │   └── cache.test.js
+│   ├── data/                        # Database files
 │   ├── logs/                        # Service logs
-│   ├── package.json                 # Dependencies
-│   └── .env                         # Service configuration
+│   └── package.json                 # Dependencies
 │
 ├── 📜 scripts/                      # Shared Helper Scripts
 │   └── load_env.sh                  # Environment variable loader

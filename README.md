@@ -7,11 +7,13 @@ This automation uses a Node.js service to monitor Slack channels and threads, wh
 ## 🚀 Architecture Overview
 
 - **Node.js Service**: Handles all Slack API operations, message filtering, thread monitoring, and response tracking
+- **Claude Service**: Integrated Node.js module that manages Claude interactions, instruction building, and timeout handling
 - **Claude Code**: Only generates responses to messages (90%+ reduction in API usage)  
 - **SQLite Database**: Ensures no duplicate responses and tracks thread conversations
 - **Thread Support**: Full conversation context across channel messages and thread replies
 - **Loop Prevention**: 8-layer anti-loop system prevents infinite responses
-- **REST API**: Clean interface between components
+- **REST API**: Clean interface between components with new `/messages/process-with-claude` endpoint
+- **Simplified Bash Script**: Now just a thin wrapper that delegates all complex logic to Node.js
 
 ## Prerequisites
 
@@ -23,9 +25,10 @@ This automation uses a Node.js service to monitor Slack channels and threads, wh
    - Visit https://anthropic.com for installation instructions
    - Ensure `claude` command is available in your PATH
 
-3. **Slack Token** (automatically extracted from Claude MCP config)
+3. **Slack User Token** (automatically extracted from Claude MCP config)
    - The setup will use your existing Claude Slack configuration
-   - Supports both user tokens (xoxp) and bot tokens (xoxb)
+   - **MUST use user tokens (xoxp)** - bot tokens cannot access private channels
+   - User tokens provide full access to channels you're a member of
 
 4. **Optional: Web Automation** (CLI version only)
    - Playwright MCP is configured for web browsing tasks
@@ -296,6 +299,30 @@ Edit `config.env` to customize bot behavior:
    - Ensure scripts are executable: `chmod +x *.sh`
    - Check file ownership
 
+## Testing
+
+### Unit Tests
+Run unit tests for the Node.js service:
+```bash
+cd slack-service
+npm test
+```
+
+### Integration Tests
+Two integration tests are available:
+
+1. **Simple Test** (recommended) - Tests all components without posting to Slack:
+```bash
+./test_integration_simple.sh
+```
+
+2. **Full Test** - Posts a test message to #ai-test and verifies bot response:
+```bash
+./test_full_integration.sh
+```
+
+⚠️ **Warning**: The full test posts real messages to Slack. It includes safety features to prevent loops.
+
 ## Security Notes
 
 - The bot will only respond in the configured channel
@@ -305,10 +332,16 @@ Edit `config.env` to customize bot behavior:
 
 ## Customization
 
-To modify Claude's behavior, edit the instruction in `claude_slack_bot.sh`:
-- Look for the `CLAUDE_INSTRUCTION` variable
+To modify Claude's behavior:
+- Edit the instruction building logic in `slack-service/src/claude-service.js`
+- Look for the `buildClaudeInstruction` method
 - Adjust the prompting to change response style
 - Add specific instructions for your use case
+
+The architecture now uses a cleaner separation:
+- **Bash script** (`claude_slack_bot.sh`): Simple orchestrator that calls Node.js endpoints
+- **Claude Service** (`slack-service/src/claude-service.js`): Handles all Claude interaction logic
+- **API** (`slack-service/src/api.js`): Provides REST endpoints including `/messages/process-with-claude`
 
 ## Support
 

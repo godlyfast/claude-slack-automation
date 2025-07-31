@@ -209,9 +209,14 @@ class FileHandler {
    * @returns {string|Buffer|object} File content or throws error if failed
    */
   async downloadFile(file, channelId) {
-    // Use the new method and extract just the content
+    // Use the new method and return the file path for Claude to read
     const result = await this.downloadAndSaveFile(file, channelId);
-    return result.content;
+    // For text files, return content; for others (like PDFs), return the file path
+    if (typeof result.content === 'string') {
+      return result.content;
+    }
+    // For PDFs and other binary files, return the file path
+    return result.filePath;
   }
 
   /**

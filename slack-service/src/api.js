@@ -1,5 +1,6 @@
 const express = require('express');
 const SlackService = require('./slack-service');
+const ClaudeService = require('./claude-service');
 const logger = require('./logger');
 const { withTimeout, handleErrorResponse } = require('./utils');
 
@@ -7,6 +8,7 @@ class API {
   constructor(slackService) {
     this.app = express();
     this.slackService = slackService;
+    this.claudeService = new ClaudeService(slackService.config);
     this.setupMiddleware();
     this.setupRoutes();
   }
@@ -27,14 +29,8 @@ class API {
     this.app.get('/messages/unresponded', async (req, res) => {
       try {
         // Add timeout from config - use API_TIMEOUT (in seconds) or REQUEST_TIMEOUT_MS (in ms)
-        const timeoutMs = process.env.API_TIMEOUT 
-          ? parseInt(process.env.API_TIMEOUT) * 1000 
-          : parseInt(process.env.REQUEST_TIMEOUT_MS) || 3000;
-          
-        const messages = await withTimeout(
-          this.slackService.getUnrespondedMessages(),
-          timeoutMs
-        );
+        // Don't wrap Slack API calls in timeout - let the SDK handle rate limiting
+        const messages = await this.slackService.getUnrespondedMessages();
         
         res.json({
           success: true,
@@ -143,22 +139,99 @@ class API {
       });
     });
 
+    // Process messages with Claude
+    this.app.post('/messages/process-with-claude', async (req, res) => {
+      try {
+        const { messages } = req.body;
+        
+        if (!messages || !Array.isArray(messages)) {
+          return res.status(400).json({
+            success: false,
+            error: 'Missing or invalid messages array'
+          });
+        }
+
+        // Get unique channels for pre-fetching
+        const uniqueChannels = [...new Set(messages
+          .map(m => m.channelName)
+          .filter(c => c))];
+
+        // Pre-fetch channel histories
+        const channelHistories = await this.claudeService.prefetchChannelHistories(
+          uniqueChannels,
+          (channel, limit) => this.slackService.getChannelHistory(channel, limit)
+        );
+
+        const results = [];
+        
+        for (const message of messages) {
+          try {
+            // Get channel history for this message
+            const channelHistory = channelHistories[message.channelName] || [];
+            
+            // Filter file paths by channel
+            if (message.filePaths && message.filePaths.length > 0) {
+              message.filePaths = this.claudeService.filterFilePathsByChannel(
+                message.filePaths,
+                message.channel
+              );
+            }
+
+            // Add channel file paths if available
+            const channelFiles = channelHistories[`${message.channelName}_files`] || [];
+            if (channelFiles.length > 0) {
+              const filteredChannelFiles = this.claudeService.filterFilePathsByChannel(
+                channelFiles,
+                message.channel
+              );
+              message.filePaths = [...(message.filePaths || []), ...filteredChannelFiles];
+              // Remove duplicates
+              message.filePaths = message.filePaths.filter((file, index, self) => 
+                index === self.findIndex(f => (f.path || f) === (file.path || file))
+              );
+            }
+
+            // Process message with Claude
+            const response = await this.claudeService.processMessage(message, channelHistory);
+            
+            results.push({
+              messageId: message.id,
+              success: true,
+              response
+            });
+
+            // Post the response back to Slack
+            await this.slackService.postResponse(message, response);
+            
+          } catch (error) {
+            logger.error(`Failed to process message ${message.id}:`, error);
+            results.push({
+              messageId: message.id,
+              success: false,
+              error: error.message
+            });
+          }
+        }
+
+        res.json({
+          success: true,
+          processed: results.length,
+          results
+        });
+        
+      } catch (error) {
+        handleErrorResponse(res, error, 'processing messages with Claude');
+      }
+    });
+
     // Get channel history endpoint
     this.app.get('/messages/channel-history/:channel', async (req, res) => {
       try {
         const { channel } = req.params;
         const limit = parseInt(req.query.limit) || 100;
         
-        // Use longer timeout for history (3x normal timeout)
-        const timeoutMs = process.env.API_TIMEOUT 
-          ? parseInt(process.env.API_TIMEOUT) * 3000 
-          : (parseInt(process.env.REQUEST_TIMEOUT_MS) || 3000) * 3;
-          
-        const history = await withTimeout(
-          this.slackService.getChannelHistory(channel, limit),
-          timeoutMs,
-          'Channel history request timed out'
-        );
+        // Don't wrap Slack API calls in timeout - let the SDK handle rate limiting
+        const history = await this.slackService.getChannelHistory(channel, limit);
         
         res.json({
           success: true,
