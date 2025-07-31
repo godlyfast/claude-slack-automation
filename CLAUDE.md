@@ -123,6 +123,7 @@ See docs/ENVIRONMENT_CONFIGURATION.md for complete list of all configuration opt
 11. **Priority System**: Send operations always take priority over fetching
 12. **Lock Mechanism**: Prevents multiple bot instances from running simultaneously
 13. **Timeout Handling**: Posts helpful message when Claude times out with instructions
+14. **Thread Replies**: Bot ALWAYS sends responses as thread replies (using thread_ts) - NEVER as regular channel messages
 
 ## Troubleshooting
 

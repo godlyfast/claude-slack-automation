@@ -14,7 +14,7 @@ DAEMON_ERROR_LOG="$LOG_DIR/${DAEMON_NAME}_errors.log"
 
 # Intervals
 SEND_CHECK_INTERVAL=60      # Check for pending messages every minute
-FETCH_COOLDOWN=180          # Wait 3 minutes between fetches
+FETCH_COOLDOWN=60           # Wait 1 minute between fetches (Slack 2025 rate limit)
 SEND_BATCH_SIZE="${SEND_BATCH_SIZE:-20}"
 FETCH_BATCH_SIZE="${FETCH_BATCH_SIZE:-50}"
 

@@ -90,7 +90,7 @@ class SlackService {
       const result = await this.client.conversations.history({
         channel: channelInfo.id,
         oldest: since,
-        limit: Math.min(this.config.maxMessages, 20),  // Limit to 20 per best practices
+        limit: Math.min(this.config.maxMessages, 15),  // Limit to 15 per Slack 2025 API limits
         inclusive: false
       });
 
@@ -296,7 +296,7 @@ class SlackService {
       const result = await this.client.chat.postMessage({
         channel: message.channel,
         text: responseText,
-        thread_ts: message.thread_ts || message.ts
+        thread_ts: message.thread_ts || message.ts  // ALWAYS post as thread reply
       });
 
       const duration = Date.now() - startTime;
@@ -336,7 +336,7 @@ class SlackService {
       // Direct API call - SDK handles rate limiting
       const result = await this.client.conversations.history({
         channel: channelInfo.id,
-        limit: Math.min(limit, 200) // Cap at 200 per best practices
+        limit: Math.min(limit, 15) // Cap at 15 per Slack 2025 API limits
       });
 
       if (!result.ok) {
