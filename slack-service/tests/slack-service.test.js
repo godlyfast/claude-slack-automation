@@ -7,6 +7,7 @@ jest.mock('../src/cache');
 jest.mock('../src/rate-limiter');
 jest.mock('../src/loop-prevention');
 jest.mock('../src/file-handler');
+jest.mock('../src/channel-rotator');
 
 describe('SlackService', () => {
   let slackService;
@@ -21,7 +22,8 @@ describe('SlackService', () => {
     responseMode: 'all', // Change to 'all' for easier testing
     maxMessages: 10,
     checkWindow: 5,
-    cacheEnabled: false // Disable cache for most tests
+    cacheEnabled: false, // Disable cache for most tests
+    useChannelRotation: false // Disable channel rotation for tests
   };
 
   beforeEach(async () => {
@@ -30,7 +32,9 @@ describe('SlackService', () => {
     // Mock LoopPreventionSystem
     const mockLoopPrevention = {
       checkAndRecordMessage: jest.fn().mockResolvedValue({ allowed: true }),
+      shouldAllowResponse: jest.fn().mockResolvedValue({ allow: true }),
       recordBotResponse: jest.fn(),
+      recordResponse: jest.fn(),
       getStatus: jest.fn().mockReturnValue({}),
       activateEmergencyStop: jest.fn(),
       deactivateEmergencyStop: jest.fn(),
@@ -64,9 +68,8 @@ describe('SlackService', () => {
       getRespondedMessages: jest.fn(),
       close: jest.fn(),
       trackThread: jest.fn(),
-      getActiveThreads: jest.fn(),
-      updateThreadLastChecked: jest.fn(),
-      recordBotResponse: jest.fn()
+      recordBotResponse: jest.fn(),
+      isBotResponse: jest.fn()
     };
 
     mockCache = {
@@ -92,6 +95,12 @@ describe('SlackService', () => {
 
     const rateLimiter = require('../src/rate-limiter');
     Object.assign(rateLimiter, mockRateLimiter);
+    
+    // Mock channel rotator - let it return the first channel
+    const channelRotator = require('../src/channel-rotator');
+    channelRotator.getNextChannels = jest.fn().mockImplementation((channels) => 
+      Promise.resolve(channels.slice(0, 1))
+    );
 
     slackService = new SlackService('test-token', config);
     await slackService.init(); // Initialize file handler
@@ -118,9 +127,6 @@ describe('SlackService', () => {
         messages: []
       });
 
-      // Mock no active threads
-      mockDb.getActiveThreads.mockResolvedValue([]);
-
       // Disable channel rotation for this test
       slackService.config.useChannelRotation = false;
 
@@ -130,9 +136,13 @@ describe('SlackService', () => {
     });
 
     it('should filter out bot messages', async () => {
+      // Mock conversations.list to always return the channel 'general'
       mockWebClient.conversations.list.mockResolvedValue({
         ok: true,
-        channels: [{ id: 'C123', name: 'general' }]
+        channels: [
+          { id: 'C123', name: 'general', is_channel: true },
+          { id: 'C456', name: 'random', is_channel: true }
+        ]
       });
 
       mockWebClient.conversations.history.mockResolvedValue({
@@ -144,10 +154,10 @@ describe('SlackService', () => {
       });
 
       mockDb.hasResponded.mockResolvedValue(false);
-      // Mock no active threads
-      mockDb.getActiveThreads.mockResolvedValue([]);
+      mockDb.isBotResponse.mockResolvedValue(false);
 
       const messages = await slackService.getUnrespondedMessages();
+      
       expect(messages).toHaveLength(1);
       expect(messages[0].text).toBe('AI help needed');
     });
@@ -177,9 +187,6 @@ describe('SlackService', () => {
       mockDb.hasResponded.mockImplementation((messageId) => {
         return Promise.resolve(messageId === '#general-1234567890.1');
       });
-
-      // Mock no active threads
-      mockDb.getActiveThreads.mockResolvedValue([]);
 
       const messages = await testService.getUnrespondedMessages();
       expect(messages).toHaveLength(1);
@@ -307,14 +314,19 @@ describe('SlackService', () => {
         cacheEnabled: true
       });
       
-      const cachedChannels = [
-        { id: 'C123', name: 'general' }
-      ];
+      const cachedChannel = { id: 'C123', name: 'general' };
       
-      // Mock cache to return channels on first two calls (one per channel lookup)
+      // Mock cache to return the specific channel
       mockCache.get
-        .mockReturnValueOnce(cachedChannels)  // First channel lookup
-        .mockReturnValue(null);  // Everything else returns null
+        .mockImplementation((key) => {
+          if (key === 'channel:general') {
+            return cachedChannel; // Return cached channel directly
+          }
+          if (key.startsWith('channel-name:')) {
+            return 'general'; // Return cached channel name
+          }
+          return null;
+        });
       
       // Mock messages for the cached channels
       mockWebClient.conversations.history.mockResolvedValue({
@@ -327,8 +339,8 @@ describe('SlackService', () => {
 
       await testService.getUnrespondedMessages();
 
-      // Should have called cache.get for channel list
-      expect(mockCache.get).toHaveBeenCalledWith('channels:list');
+      // Should have checked for channel:general
+      expect(mockCache.get).toHaveBeenCalledWith('channel:general');
       // Should have saved a rate limit call
       expect(mockCache.incrementRateLimitSaves).toHaveBeenCalled();
       // Should NOT have called the API
@@ -409,194 +421,9 @@ describe('SlackService', () => {
       );
     });
 
-    it('should check active threads for new messages', async () => {
-      // Mock active threads
-      mockDb.getActiveThreads.mockResolvedValue([
-        {
-          channel_id: '#general',
-          thread_ts: '1234567890.123456'
-        }
-      ]);
 
-      // Mock channel lookup
-      mockWebClient.conversations.list.mockResolvedValue({
-        ok: true,
-        channels: [{ id: 'C123', name: 'general' }]
-      });
 
-      // Mock thread messages
-      mockWebClient.conversations.replies.mockResolvedValue({
-        ok: true,
-        messages: [
-          { ts: '1234567890.123456', text: 'Parent message', user: 'U123' },
-          { ts: '1234567890.234567', text: 'AI response', bot_id: 'B123' },
-          { ts: '1234567890.345678', text: 'Follow-up question with AI', user: 'U123' }
-        ]
-      });
 
-      mockDb.hasResponded.mockResolvedValue(false);
 
-      const messages = await slackService.getUnrespondedMessages();
-
-      // Should have called replies API
-      expect(mockWebClient.conversations.replies).toHaveBeenCalledWith(
-        expect.objectContaining({
-          channel: 'C123',
-          ts: '1234567890.123456'
-        })
-      );
-
-      // Should update thread last checked
-      expect(mockDb.updateThreadLastChecked).toHaveBeenCalledWith(
-        '#general',
-        '1234567890.123456'
-      );
-
-      // Should include thread message
-      const threadMessages = messages.filter(m => m.isThreadReply);
-      expect(threadMessages).toHaveLength(1);
-      expect(threadMessages[0].text).toBe('Follow-up question with AI');
-      expect(threadMessages[0].threadContext).toBeDefined();
-    });
-
-    it('should skip parent message in thread replies', async () => {
-      mockDb.getActiveThreads.mockResolvedValue([
-        {
-          channel_id: '#general',
-          thread_ts: '1234567890.123456'
-        }
-      ]);
-
-      mockWebClient.conversations.list.mockResolvedValue({
-        ok: true,
-        channels: [{ id: 'C123', name: 'general' }]
-      });
-
-      mockWebClient.conversations.replies.mockResolvedValue({
-        ok: true,
-        messages: [
-          { ts: '1234567890.123456', text: 'Parent message with AI', user: 'U123' }
-        ]
-      });
-
-      const messages = await slackService.getUnrespondedMessages();
-      const threadMessages = messages.filter(m => m.isThreadReply);
-      expect(threadMessages).toHaveLength(0);
-    });
-
-    it('should include thread context in message', async () => {
-      mockDb.getActiveThreads.mockResolvedValue([
-        {
-          channel_id: '#general',
-          thread_ts: '1234567890.123456'
-        }
-      ]);
-
-      mockWebClient.conversations.list.mockResolvedValue({
-        ok: true,
-        channels: [{ id: 'C123', name: 'general' }]
-      });
-
-      const threadHistory = [
-        { ts: '1234567890.123456', text: 'What is AI?', user: 'U123' },
-        { ts: '1234567890.234567', text: 'AI stands for Artificial Intelligence...', bot_id: 'B123' },
-        { ts: '1234567890.345678', text: 'Tell me more about AI', user: 'U123' }
-      ];
-
-      mockWebClient.conversations.replies
-        .mockResolvedValueOnce({
-          ok: true,
-          messages: threadHistory
-        })
-        .mockResolvedValueOnce({
-          ok: true,
-          messages: threadHistory
-        });
-
-      mockDb.hasResponded.mockResolvedValue(false);
-
-      const messages = await slackService.getUnrespondedMessages();
-      const threadMessage = messages.find(m => m.isThreadReply);
-
-      expect(threadMessage).toBeDefined();
-      expect(threadMessage.threadContext).toHaveLength(3);
-      expect(threadMessage.threadContext[0].text).toBe('What is AI?');
-      expect(threadMessage.threadContext[1].text).toBe('AI stands for Artificial Intelligence...');
-      expect(threadMessage.threadContext[2].text).toBe('Tell me more about AI');
-    });
-
-    it('should handle MCP messages in threads', async () => {
-      mockDb.getActiveThreads.mockResolvedValue([
-        {
-          channel_id: '#general',
-          thread_ts: '1234567890.123456'
-        }
-      ]);
-
-      mockWebClient.conversations.list.mockResolvedValue({
-        ok: true,
-        channels: [{ id: 'C123', name: 'general' }]
-      });
-
-      mockWebClient.conversations.replies.mockResolvedValue({
-        ok: true,
-        messages: [
-          { ts: '1234567890.123456', text: 'Parent message', user: 'U123' },
-          { 
-            ts: '1234567890.234567', 
-            text: 'MCP message with AI', 
-            user: 'U123',
-            bot_id: 'B456',
-            app_id: 'A097GBJDNAF' // MCP app ID
-          }
-        ]
-      });
-
-      mockDb.hasResponded.mockResolvedValue(false);
-
-      const messages = await slackService.getUnrespondedMessages();
-      const threadMessages = messages.filter(m => m.isThreadReply);
-      
-      // Should include MCP message since it has a user ID
-      expect(threadMessages).toHaveLength(1);
-      expect(threadMessages[0].text).toBe('MCP message with AI');
-    });
-
-    it('should cache thread messages', async () => {
-      slackService.config.cacheEnabled = true;
-      
-      mockDb.getActiveThreads.mockResolvedValue([
-        {
-          channel_id: '#general',
-          thread_ts: '1234567890.123456'
-        }
-      ]);
-
-      const cachedThreadMessages = [
-        { ts: '1234567890.123456', text: 'Cached message', user: 'U123' }
-      ];
-
-      // Reset mock before setting up specific behavior
-      mockCache.get.mockReset();
-      mockCache.get
-        .mockImplementation((key) => {
-          if (key === 'thread:C123:1234567890.123456') {
-            return cachedThreadMessages;
-          }
-          return null;
-        });
-
-      mockWebClient.conversations.list.mockResolvedValue({
-        ok: true,
-        channels: [{ id: 'C123', name: 'general' }]
-      });
-
-      await slackService.getUnrespondedMessages();
-
-      // Should use cached thread messages
-      expect(mockCache.get).toHaveBeenCalledWith('thread:C123:1234567890.123456');
-      expect(mockCache.incrementRateLimitSaves).toHaveBeenCalled();
-      expect(mockWebClient.conversations.replies).not.toHaveBeenCalled();
-    });
   });
 });
