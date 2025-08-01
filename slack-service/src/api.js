@@ -140,6 +140,8 @@ class API {
     });
 
     // Process messages with Claude
+    // 🚨 CRITICAL: This endpoint MUST fetch channel history and queue responses
+    // Claude should NEVER directly interact with Slack API
     this.app.post('/messages/process-with-claude', async (req, res) => {
       try {
         const { messages } = req.body;
@@ -157,16 +159,18 @@ class API {
           .filter(c => c))];
 
         // Pre-fetch channel histories
-        // Temporarily disabled to reduce rate limiting
-        const channelHistories = {}; // await this.claudeService.prefetchChannelHistories(
-        //   uniqueChannels,
-        //   (channel, limit) => this.slackService.getChannelHistory(channel, limit)
-        // );
+        const channelHistories = await this.claudeService.prefetchChannelHistories(
+          uniqueChannels,
+          (channel, limit) => this.slackService.getChannelHistory(channel, limit)
+        );
 
         const results = [];
         
         for (const message of messages) {
           try {
+            // Mark message as processing
+            await this.slackService.db.updateMessageStatus(message.message_id, 'processing');
+            
             // Get channel history for this message
             const channelHistory = channelHistories[message.channelName] || [];
             
@@ -195,17 +199,30 @@ class API {
             // Process message with Claude
             const response = await this.claudeService.processMessage(message, channelHistory);
             
+            // 🚨 CRITICAL: Queue the response - NEVER send directly to Slack
+            // Claude must remain isolated from Slack API
+            await this.slackService.db.queueResponse(
+              message.message_id,  // Use Slack message ID, not DB row ID
+              message.channel_id || message.channel,
+              message.thread_ts || message.message_id,  // Use message_id as thread_ts if not in a thread
+              response
+            );
+            
+            // Update message status to processed
+            await this.slackService.db.updateMessageStatus(message.message_id, 'processed');
+            
             results.push({
               messageId: message.id,
               success: true,
               response
             });
-
-            // Post the response back to Slack
-            await this.slackService.postResponse(message, response);
             
           } catch (error) {
             logger.error(`Failed to process message ${message.id}:`, error);
+            
+            // Update message status to error
+            await this.slackService.db.updateMessageStatus(message.message_id, 'error', error.message);
+            
             results.push({
               messageId: message.id,
               success: false,

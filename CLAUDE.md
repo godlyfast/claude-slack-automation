@@ -8,7 +8,28 @@ This is a Claude Slack Bot automation system with a Node.js service that monitor
 
 ## Architecture
 
-The system uses a Node.js service architecture to minimize Claude API usage:
+**🚨 CRITICAL: NEVER CHANGE THE CLAUDE ISOLATION ARCHITECTURE**
+
+The system uses a strict three-layer architecture where Claude is COMPLETELY ISOLATED from the Slack API. This is a fundamental design principle that MUST NOT be violated.
+
+### Core Principle: Claude Database Isolation
+
+```
+Slack API ──▶ Database ──▶ Claude ──▶ Database ──▶ Slack API
+```
+
+**Claude can ONLY**:
+- Read from database (message_queue)
+- Write to database (response_queue)
+- Process messages with pre-fetched context
+
+**Claude MUST NEVER**:
+- Make direct Slack API calls
+- Have access to Slack tokens
+- Use Slack MCP tools
+- Send messages directly to Slack
+
+See `docs/ARCHITECTURE.md` for complete architectural documentation.
 
 ### Components
 

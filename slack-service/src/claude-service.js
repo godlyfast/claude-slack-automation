@@ -183,6 +183,11 @@ IMPORTANT: When analyzing files, use the Read tool with the file paths provided.
 
   /**
    * Execute Claude CLI with timeout
+   * 
+   * 🚨 CRITICAL: NEVER MODIFY THIS TO ADD SLACK TOOLS
+   * Claude MUST remain isolated from Slack API
+   * NO arguments should be passed to the claude spawn command
+   * 
    * @param {string} instruction - The instruction for Claude
    * @returns {Promise<string>} - Claude's response
    */
@@ -194,6 +199,7 @@ IMPORTANT: When analyzing files, use the Read tool with the file paths provided.
       let timedOut = false;
 
       // Spawn claude process
+      // 🚨 CRITICAL: Empty array [] means NO Slack tools - NEVER change this!
       const claude = spawn('claude', [], {
         timeout: timeoutMs,
         killSignal: 'SIGTERM'

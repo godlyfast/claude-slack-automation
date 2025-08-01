@@ -99,22 +99,49 @@ process_messages() {
     
     log "$PROCESS_LOG" "Processing pending messages from database..."
     
+    # First, fetch pending messages from the queue
+    PENDING_MESSAGES=$(curl -s "${SERVICE_URL}/queue/messages/pending?limit=${batch_size}" 2>&1)
+    
+    if [ $? -ne 0 ] || ! echo "$PENDING_MESSAGES" | jq -e '.success' >/dev/null 2>&1; then
+        log_error "$PROCESS_LOG" "Failed to fetch pending messages"
+        return 1
+    fi
+    
+    # Extract just the messages array
+    MESSAGES_ARRAY=$(echo "$PENDING_MESSAGES" | jq '.messages')
+    MESSAGE_COUNT=$(echo "$MESSAGES_ARRAY" | jq 'length')
+    
+    if [ "$MESSAGE_COUNT" -eq 0 ]; then
+        log "$PROCESS_LOG" "No pending messages to process"
+        return 0
+    fi
+    
+    log "$PROCESS_LOG" "Found $MESSAGE_COUNT pending messages to process"
+    
+    # 🚨 CRITICAL: MUST use process-with-claude endpoint for channel history
+    # NEVER use /queue/process - it lacks context and violates architecture
     RESULT=$(curl -s -X POST \
         -H "Content-Type: application/json" \
-        -d "{\"batchSize\": ${batch_size}}" \
-        "${SERVICE_URL}/queue/process" 2>&1)
+        -d "{\"messages\": $MESSAGES_ARRAY}" \
+        "${SERVICE_URL}/messages/process-with-claude" 2>&1)
     
     EXIT_CODE=$?
     
     if [ $EXIT_CODE -eq 0 ] && echo "$RESULT" | jq -e '.success' >/dev/null 2>&1; then
         PROCESSED=$(echo "$RESULT" | jq -r '.processed // 0')
-        FAILED=$(echo "$RESULT" | jq -r '.failed // 0')
-        MESSAGE=$(echo "$RESULT" | jq -r '.message // ""')
+        RESULTS=$(echo "$RESULT" | jq -r '.results // []')
         
-        if [ -n "$MESSAGE" ]; then
-            log "$PROCESS_LOG" "$MESSAGE"
-        else
-            log "$PROCESS_LOG" "Processed $PROCESSED messages successfully, $FAILED failed"
+        # Count successes and failures
+        SUCCEEDED=$(echo "$RESULTS" | jq '[.[] | select(.success == true)] | length' 2>/dev/null || echo "0")
+        FAILED=$(echo "$RESULTS" | jq '[.[] | select(.success == false)] | length' 2>/dev/null || echo "0")
+        
+        log "$PROCESS_LOG" "Processed $PROCESSED messages: $SUCCEEDED succeeded, $FAILED failed"
+        
+        # Log any errors
+        if [ "$FAILED" -gt 0 ]; then
+            echo "$RESULTS" | jq -r '.[] | select(.success == false) | "  Error for message \(.messageId): \(.error)"' 2>/dev/null | while read -r line; do
+                [ -n "$line" ] && log_error "$PROCESS_LOG" "$line"
+            done
         fi
         
         log "$PROCESS_LOG" "Queue Processor completed successfully"
