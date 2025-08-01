@@ -9,16 +9,16 @@ claude-slack-automation/
 │   ├── queue_operations.sh          # Unified queue operations (fetch/process/send)
 │   ├── config.env                   # Configuration - SINGLE SOURCE OF TRUTH
 │   ├── com.claude.slackbot.plist    # macOS LaunchAgent config
-│   └── test_integration.sh          # Basic integration test
+│   ├── test_integration_simple.sh   # Basic integration test
+│   └── test_full_integration.sh     # Full integration test with message posting
 │
 ├── 📦 setup/                        # Installation & Setup Only
-│   ├── setup.sh                     # Unix/Linux cron setup
 │   ├── setup_macos.sh               # macOS LaunchAgent setup
-│   └── quickstart.sh                # Interactive setup wizard
+│   ├── quickstart.sh                # Interactive setup wizard
+│   └── install-git-hooks.sh         # Git hooks installation
 │
-├── 🔧 utils/                        # Runtime Utilities Only
-│   ├── daemon.sh                    # Background process manager
-│   └── cleanup.sh                   # Codebase cleanup utility
+├── 👻 daemons/                      # Daemon processes
+│   └── process_daemon.sh            # Message processing daemon
 │
 ├── 📦 slack-service/                # Node.js Slack Service
 │   ├── src/                         # Source code
@@ -45,12 +45,14 @@ claude-slack-automation/
 │   └── package.json                 # Dependencies
 │
 ├── 📜 scripts/                      # Shared Helper Scripts
-│   └── load_env.sh                  # Environment variable loader
+│   ├── common_functions.sh          # Shared utility functions
+│   ├── daemon_wrapper.sh            # Daemon management wrapper
+│   └── slack_api_lock.sh            # API lock for rate limiting
 │
 ├── 📚 docs/                         # All Documentation
-│   ├── README_macOS.md              # Platform-specific guides
+│   ├── INSTALLATION_macOS.md        # macOS installation guide
 │   ├── PLAYWRIGHT.md                # Feature documentation
-│   ├── RATE_LIMITS.md               # Technical documentation
+│   ├── PERFORMANCE.md               # Rate limits and caching
 │   └── ukrainian/                   # Localized documentation
 │       ├── ІНСТРУКЦІЯ_SLACK_БОТ.md
 │       ├── ВІЗУАЛЬНА_ІНСТРУКЦІЯ.md
@@ -91,7 +93,7 @@ claude-slack-automation/
 
 ### 1. ❌ NEVER Create These Files
 - **No duplicate bot versions** (v2, v3, smart, etc.)
-- **No test scripts** outside of test_integration.sh
+- **No test scripts** outside of test_integration_simple.sh and test_full_integration.sh
 - **No temporary Python scripts** for one-time tasks
 - **No Docker files** - project is Docker-free
 - **No duplicate documentation** - update existing files
@@ -99,7 +101,7 @@ claude-slack-automation/
 ### 2. 📁 Directory Rules
 
 **Root Directory:**
-- Limited shell scripts: bot_control.sh (management), queue_operations.sh (core), test_integration.sh
+- Limited shell scripts: bot_control.sh (management), queue_operations.sh (core), daemon_control.sh (daemons), test scripts
 - No experimental or temporary scripts
 - No data files (txt, json, csv)
 
@@ -195,7 +197,7 @@ if git diff --cached --name-only | grep -E 'v[0-9]+\.sh$'; then
 fi
 
 # Check for test_ scripts in root
-if git diff --cached --name-only | grep -E '^test_.*\.sh$' | grep -v "test_integration.sh"; then
+if git diff --cached --name-only | grep -E '^test_.*\.sh$' | grep -v -E "test_integration_simple.sh|test_full_integration.sh"; then
     echo "❌ ERROR: Test scripts belong in tests/ directory"
     exit 1
 fi
@@ -229,7 +231,7 @@ fi
 → Update existing .md files in docs/
 
 **Need to test something?**
-→ Use test_integration.sh or Claude Code directly
+→ Use test_integration_simple.sh, test_full_integration.sh, or Claude Code directly
 
 **Need a one-time script?**
 → Don't save it, run in Claude Code

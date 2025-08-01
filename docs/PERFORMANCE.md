@@ -166,3 +166,67 @@ tail -f logs/claude_slack_bot.log
 2. **Use triggers wisely**: Only essential keywords
 3. **Monitor actively**: Check logs regularly
 4. **Plan ahead**: Apply for Marketplace early
+
+## 🚀 Caching Implementation
+
+The service implements intelligent caching to further reduce API calls and improve performance.
+
+### Features
+
+1. **In-Memory Cache**
+   - TTL Support: Each cached item has a configurable time-to-live
+   - Automatic Cleanup: Expired entries are cleaned up periodically
+   - Statistics Tracking: Hit rate, memory usage, and rate limits saved
+
+2. **Cached Endpoints**
+   - Channel List (`conversations.list`): Cached for 5 minutes
+   - Message History (`conversations.history`): Cached for 30 seconds
+   - Smart Invalidation: Cache keys include timestamps
+
+### Cache Configuration
+
+In `config.env`:
+```bash
+# Channel list cache TTL in seconds (default: 300)
+CHANNEL_CACHE_TTL=300
+
+# Message cache TTL in seconds (default: 30)  
+MESSAGE_CACHE_TTL=30
+
+# Enable/disable caching (default: true)
+CACHE_ENABLED=true
+```
+
+### Cache API Endpoints
+
+```bash
+# Get cache statistics
+curl ${SERVICE_URL}/cache/stats
+
+# Clear cache
+curl -X POST ${SERVICE_URL}/cache/clear
+
+# Warm cache (pre-fetch data)
+curl -X POST ${SERVICE_URL}/cache/warm
+```
+
+### Cache Benefits
+
+1. **Reduced API Calls**: ~90% reduction during normal operation
+2. **Faster Response Times**: Cached responses return instantly
+3. **Rate Limit Protection**: Fewer API calls mean fewer rate limits
+4. **Cost Savings**: Lower API usage costs
+
+### Cache Monitoring
+
+Check cache performance:
+```json
+{
+  "hits": 150,
+  "misses": 20,
+  "hitRate": "88.24%",
+  "rateLimitsSaved": 130,
+  "size": 12,
+  "estimatedMemoryMB": "0.45"
+}
+```

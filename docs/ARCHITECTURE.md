@@ -119,3 +119,119 @@ To verify Claude's isolation:
 2. Verify no Slack tokens in Claude's environment
 3. Ensure all Slack operations go through Node.js service
 4. Monitor that Claude only reads/writes to database queues
+
+## Queue-Based Architecture Details
+
+The bot uses a queue-based architecture that separates Slack API operations from Claude processing, providing resilience against rate limits and allowing each component to operate independently.
+
+### Queue Components
+
+#### 1. Message Fetcher
+- Fetches unresponded messages from Slack
+- Stores them in the `message_queue` table  
+- Can be rate limited without affecting processing
+
+#### 2. Claude Processor
+- Reads messages from the database queue (no Slack API calls)
+- Processes messages with Claude using pre-fetched context
+- Stores responses in the `response_queue` table
+
+#### 3. Response Sender
+- Reads responses from the database queue
+- Sends responses to Slack as thread replies
+- Handles rate limit errors by marking messages for retry
+
+### Queue Operations
+
+```bash
+# Fetch messages from Slack (when API is available)
+./queue_operations.sh fetch
+
+# Process messages with Claude (no Slack API needed)
+./queue_operations.sh process [batch_size]
+
+# Send responses to Slack (when API is available)
+./queue_operations.sh send [batch_size]
+
+# Priority mode: Send first, then fetch if no pending responses
+./queue_operations.sh priority
+
+# Check queue status
+./queue_operations.sh status
+```
+
+### Benefits of Queue Architecture
+
+1. **Rate Limit Resilience**: Operations continue even when Slack API is rate limited
+2. **Parallel Processing**: Multiple messages processed simultaneously
+3. **Independent Operations**: Each stage can run on its own schedule
+4. **Error Recovery**: Failed operations can be retried without data loss
+5. **Scalability**: Batch sizes can be adjusted based on load
+6. **Priority System**: Sending responses always takes priority over fetching
+
+### Daemon Architecture
+
+The bot uses a daemon process for continuous operation:
+
+```bash
+# Start daemon
+./daemon_control.sh start
+
+# Check status
+./daemon_control.sh status
+
+# View logs
+./daemon_control.sh logs
+
+# Stop daemon
+./daemon_control.sh stop
+```
+
+The process daemon runs every 60 seconds and handles fetch, process, and send operations through queue_operations.sh.
+
+### Queue Monitoring
+
+Check queue and system status:
+```bash
+# Queue status
+./queue_operations.sh status
+
+# API endpoints for monitoring
+curl ${SERVICE_URL}/queue/messages/pending
+curl ${SERVICE_URL}/queue/responses/pending
+```
+
+## Data Retention and Database Design
+
+### Important: All Messages Are Preserved
+
+This bot **NEVER deletes any messages** from the database. All data is preserved for:
+
+1. **Historical Context** - Past conversations can be used as context for better responses
+2. **Audit Trail** - Complete record of all bot interactions
+3. **Debugging** - Investigate issues with full message history
+4. **Analytics** - Analyze patterns and improve responses over time
+
+### Database Tables
+
+- **`responded_messages`**: Tracks which messages the bot has already responded to
+- **`message_queue`**: Stores messages fetched from Slack for processing  
+- **`response_queue`**: Stores Claude's responses waiting to be sent
+- **`bot_threads`**: Tracks threads where bot has participated
+- **`bot_responses`**: Records bot's own messages for loop prevention
+
+All tables preserve data permanently with status tracking. See [DATABASE_SCHEMA.md](./DATABASE_SCHEMA.md) for complete schema details.
+
+### Database Growth Management
+
+While messages are never deleted, SQLite provides efficient storage:
+- Text compression and indexed lookups
+- Typical message is only ~1KB  
+- 100,000 messages ≈ 100MB
+
+### Backup Recommendations
+
+```bash
+# Simple backup
+cp slack-service/data/slack-bot.db backups/slack-bot-$(date +%Y%m%d).db
+```

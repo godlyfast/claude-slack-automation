@@ -69,8 +69,8 @@ launchctl list | grep claude
 
 **Background Daemon:**
 ```bash
-./utils/daemon.sh start
-./utils/daemon.sh status
+./daemon_control.sh start
+./daemon_control.sh status
 ```
 
 **Interactive Wizard:**
@@ -90,7 +90,7 @@ npm install
 npm start &
 
 # Verify service is running
-curl http://localhost:3030/health
+curl ${SERVICE_URL}/health
 ```
 
 ### 2. Configure the Bot
@@ -127,31 +127,32 @@ claude-slack-automation/
 │   │   ├── slack-service.js    # Slack API wrapper + thread monitoring
 │   │   ├── db.js               # SQLite database (deduplication + threads)
 │   │   └── loop-prevention.js  # 8-layer anti-loop system
-│   ├── tests/                  # 55 comprehensive unit tests
+│   ├── tests/                  # 70+ comprehensive unit tests
 │   ├── logs/                   # Service-specific logs
 │   ├── package.json            # Dependencies (@slack/web-api, sqlite3)
-│   └── .env                    # Service configuration
+│   └── data/                   # SQLite databases and state files
 ├── queue_operations.sh         # Unified queue operations (fetch/process/send)
 ├── config.env                  # Bot configuration
 ├── com.claude.slackbot.plist   # macOS LaunchAgent config
-├── test_integration.sh         # Integration test
+├── test_integration_simple.sh  # Basic integration test
+├── test_full_integration.sh    # Full integration test with message posting
 ├── setup/                      # Installation scripts
-│   ├── setup.sh               # Unix/Linux cron setup
 │   ├── setup_macos.sh          # macOS LaunchAgent setup  
 │   └── quickstart.sh           # Interactive setup wizard
-├── utils/                      # Runtime utilities
-│   ├── daemon.sh              # Background process manager
-│   └── cleanup.sh             # Codebase maintenance
+├── daemons/                    # Daemon processes
+│   └── process_daemon.sh      # Message processing daemon
 ├── scripts/                    # Helper scripts
-│   └── load_env.sh            # Environment loader
+│   ├── common_functions.sh    # Shared utilities
+│   ├── daemon_wrapper.sh      # Daemon management wrapper
+│   └── slack_api_lock.sh      # API rate limiting lock
 ├── docs/                       # Documentation
 │   ├── ARCHITECTURE.md        # System architecture and isolation
 │   ├── DATABASE_SCHEMA.md     # Complete database structure
 │   ├── BOT_CONTROL.md         # Control script guide
-│   ├── README_macOS.md        # macOS-specific guide
+│   ├── INSTALLATION_macOS.md   # macOS installation guide
 │   ├── FILE_ATTACHMENTS.md    # File processing guide
 │   ├── PLAYWRIGHT.md          # Web automation features
-│   ├── RATE_LIMITS.md         # Rate limiting strategies
+│   ├── PERFORMANCE.md         # Rate limits and caching
 │   └── ukrainian/             # Ukrainian language guides
 └── logs/                       # Bot execution logs
     ├── queue_operations.log
@@ -183,8 +184,8 @@ cd slack-service && npm start &
 ./queue_operations.sh priority
 
 # Test service endpoints
-curl http://localhost:3030/health
-curl http://localhost:3030/messages/unresponded
+curl ${SERVICE_URL}/health
+curl ${SERVICE_URL}/messages/unresponded
 
 # Run integration test
 ./test_integration.sh
@@ -202,10 +203,10 @@ tail -f logs/queue_operations_errors.log
 tail -f slack-service/logs/combined.log
 
 # Check service health
-curl http://localhost:3030/health
+curl ${SERVICE_URL}/health
 
 # View database stats
-curl http://localhost:3030/stats
+curl ${SERVICE_URL}/stats
 ```
 
 ### 🎛️ Control Commands
@@ -231,7 +232,7 @@ launchctl unload ~/Library/LaunchAgents/com.claude.slackbot.plist
 launchctl load ~/Library/LaunchAgents/com.claude.slackbot.plist
 
 # Daemon controls
-./utils/daemon.sh start|stop|restart|status|logs
+./daemon_control.sh start|stop|restart|status|logs
 
 # Emergency cleanup
 pkill -f queue_operations.sh
@@ -278,7 +279,7 @@ Edit `config.env` to customize bot behavior:
    - Verify bot has access to channels in Slack workspace
    - Check token permissions (channels:history, channels:read, chat:write)
    - Ensure channels are public or bot is invited to private channels
-   - Test with: `curl http://localhost:3030/messages/unresponded`
+   - Test with: `curl ${SERVICE_URL}/messages/unresponded`
 
 3. **Database errors**
    - Check write permissions: `ls -la slack-service/data/`
@@ -293,7 +294,7 @@ Edit `config.env` to customize bot behavior:
    - May need to add to PATH in the script
 
 2. **No responses in Slack**
-   - Verify Node.js service is running: `curl http://localhost:3030/health`
+   - Verify Node.js service is running: `curl ${SERVICE_URL}/health`
    - Check bot logs: `tail -f logs/queue_operations.log`
    - Ensure correct channel names in config.env (include #)
    - Verify trigger keywords match message content

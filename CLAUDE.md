@@ -92,10 +92,10 @@ See `docs/ARCHITECTURE.md` for complete architectural documentation and `docs/DA
 ./queue_operations.sh fetch     # Fetch new messages (lower priority)
 
 # Check service health
-curl http://localhost:3030/health
+curl ${SERVICE_URL}/health
 
 # View unresponded messages
-curl http://localhost:3030/messages/unresponded | jq
+curl ${SERVICE_URL}/messages/unresponded | jq
 ```
 
 ### Logs
@@ -141,11 +141,10 @@ See docs/ENVIRONMENT_CONFIGURATION.md for complete list of all configuration opt
 6. **Private Channels**: Supports both public and private channels
 7. **MCP Messages**: Handles messages sent via Claude's MCP Slack integration
 8. **Error Handling**: Comprehensive logging in both Node.js and shell script
-9. **Unit Tests**: Full test coverage including new claude-service.js (22 tests)
-10. **Daemon Architecture**: Uses daemon processes instead of cron for better reliability
-    - Send daemon runs every 30 seconds (high priority)
+9. **Unit Tests**: Comprehensive test coverage with 70+ tests across all modules
+10. **Daemon Architecture**: Uses daemon process for continuous message processing
     - Process daemon runs every 60 seconds
-    - Fetch daemon runs every 3 minutes (lower priority)
+    - Handles fetch, process, and send operations through queue_operations.sh
 11. **Priority System**: Send operations always take priority over fetching
 12. **Lock Mechanism**: Prevents multiple bot instances from running simultaneously
 13. **Timeout Handling**: Posts helpful message when Claude times out with instructions
@@ -165,7 +164,7 @@ Common issues:
 - **Private channel not visible**: Ensure user is member of the private channel
 - **Messages appear as bot messages**: Normal for MCP - service handles this correctly
 - **Database errors**: Check write permissions in slack-service/data/ directory
-- **Port already in use**: Change PORT in .env or stop existing service (port 3030)
+- **Port already in use**: Change SERVICE_PORT in config.env or stop existing service (port 3030)
 - **Claude command not found**: Ensure Claude Code is installed and in PATH
 - **Rate limits**: Service includes caching and rate limiting protection
 - **LaunchAgent not running**: Check Console.app for errors, ensure Terminal has Full Disk Access

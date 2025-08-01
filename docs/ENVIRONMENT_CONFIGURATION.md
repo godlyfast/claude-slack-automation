@@ -12,7 +12,7 @@ All configuration is stored in `config.env` in the project root. This file is so
 
 | Variable | Description | Default | Required |
 |----------|-------------|---------|----------|
-| `SLACK_BOT_TOKEN` | Slack bot token (xoxb-) for API access | - | Yes |
+| `SLACK_BOT_TOKEN` | Slack user token (xoxp-) for API access | - | Yes |
 | `SLACK_CHANNELS` | Comma-separated list of channels to monitor | - | Yes |
 | `TRIGGER_KEYWORDS` | Comma-separated keywords that trigger responses | - | Yes |
 | `RESPONSE_MODE` | Response mode: "all" or "mentions" | all | No |
