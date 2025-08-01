@@ -82,7 +82,11 @@ class SlackService {
     // Reset rate limit tracker
     this.lastRateLimitRetryAfter = null;
 
-    for (const channel of this.config.channels) {
+    // Use channel rotation to only check one channel per run (due to 1 API call/minute limit)
+    const channelsToCheck = await channelRotator.getNextChannels(this.config.channels, 1);
+    logger.info(`Checking channel(s) this run: ${channelsToCheck.join(', ')}`);
+
+    for (const channel of channelsToCheck) {
       try {
         const channelMessages = await this._fetchChannelMessages(channel, since);
         const filtered = await this._filterMessages(channelMessages, channel);

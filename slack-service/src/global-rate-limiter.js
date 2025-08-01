@@ -5,7 +5,7 @@ const logger = require('./logger');
 class GlobalRateLimiter {
   constructor() {
     this.stateFile = path.join(__dirname, '..', 'data', 'rate_limit_state.json');
-    this.minTimeBetweenCalls = 60000; // 60 seconds = 1 minute
+    this.minTimeBetweenCalls = 65000; // 65 seconds (small buffer above 60s limit)
     this.ensureDataDir();
     this.loadState();
   }
@@ -104,7 +104,9 @@ class GlobalRateLimiter {
       blockedCalls: this.state.blockedCalls,
       lastApiCall: this.state.lastApiCall ? new Date(this.state.lastApiCall).toISOString() : 'Never',
       nextCallAllowedIn: Math.ceil(nextCallTime / 1000),
-      canCallNow: timeSinceLastCall >= this.minTimeBetweenCalls
+      canCallNow: timeSinceLastCall >= this.minTimeBetweenCalls,
+      enforcedLimit: '1 call per 65 seconds',
+      description: 'Global rate limiter with 5-second buffer above Slack\'s 60-second limit'
     };
   }
 
