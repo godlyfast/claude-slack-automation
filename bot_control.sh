@@ -204,10 +204,10 @@ setup_all() {
     
     # Setup automation
     echo -e "${BLUE}Setting up daemon automation...${NC}"
-    echo "The new architecture uses daemon processes for continuous operation."
-    echo "Daemons provide better control and reliability than cron jobs."
+    echo "The architecture uses a single process daemon for continuous operation."
+    echo "The daemon runs queue operations in priority mode."
     echo
-    echo "To start daemons: ./daemon_control.sh start"
+    echo "To start daemon: ./daemon_control.sh start"
     echo "To check status: ./daemon_control.sh status"
     echo
     
@@ -217,15 +217,16 @@ setup_all() {
     
     echo
     echo -e "${BLUE}📖 Next Steps:${NC}"
-    echo "1. Start daemons: ./daemon_control.sh start"
-    echo "   (Starts adaptive daemon that intelligently sends or fetches)"
+    echo "1. Start daemon: ./daemon_control.sh start"
+    echo "   (Runs priority mode: sends responses first, then fetches if needed)"
     echo "2. Monitor queues with: $0 monitor"
     echo "3. Check daemon status: ./daemon_control.sh status"
-    echo "4. View daemon logs: ./daemon_control.sh logs adaptive"
+    echo "4. View daemon logs: ./daemon_control.sh logs"
     echo "5. Run operations manually if needed:"
     echo "   - $0 queue fetch    # Fetch from Slack"
     echo "   - $0 queue process  # Process with Claude"
     echo "   - $0 queue send     # Send to Slack"
+    echo "   - $0 queue priority # Run priority mode (recommended)"
 }
 
 # Function to show comprehensive status
@@ -259,15 +260,15 @@ show_status() {
     echo -e "${BLUE}Daemon Status:${NC}"
     if [ -f "./daemon_control.sh" ]; then
         # Get daemon status in a compact format
-        # Check adaptive daemon status (strip ANSI codes)
-        DAEMON_LINE=$(./daemon_control.sh status 2>/dev/null | grep "^adaptive" | head -1 | sed 's/\x1b\[[0-9;]*m//g')
+        # Check process daemon status (strip ANSI codes)
+        DAEMON_LINE=$(./daemon_control.sh status 2>/dev/null | grep "^process" | head -1 | sed 's/\x1b\[[0-9;]*m//g')
         if echo "$DAEMON_LINE" | grep -q "running"; then
-            ADAPTIVE_PID=$(echo "$DAEMON_LINE" | awk '{print $3}')
-            echo -e "Adaptive Daemon: ${GREEN}● Running${NC} (PID: $ADAPTIVE_PID)"
-            echo -e "                 Sends every minute, fetches when idle"
+            PROCESS_PID=$(echo "$DAEMON_LINE" | awk '{print $3}')
+            echo -e "Process Daemon: ${GREEN}● Running${NC} (PID: $PROCESS_PID)"
+            echo -e "                Handles all queue operations every ${PROCESS_INTERVAL:-60} seconds"
         else
-            echo -e "Adaptive Daemon: ${RED}● Stopped${NC}"
-            echo -e "                 ${YELLOW}Run '$0 daemon start adaptive' to enable${NC}"
+            echo -e "Process Daemon: ${RED}● Stopped${NC}"
+            echo -e "                ${YELLOW}Run '$0 daemon start' to enable${NC}"
         fi
     else
         echo -e "Daemon Control:  ${YELLOW}Not available${NC}"
@@ -445,39 +446,35 @@ monitor_queues() {
 # Function to view logs with selection menu
 view_logs() {
     echo "Select log to view:"
-    echo "1. Queue Fetcher log"
-    echo "2. Queue Processor log"
-    echo "3. Queue Sender log"
-    echo "4. Node.js service log"
-    echo "5. Service detailed logs"
-    echo "6. Error logs"
-    echo "7. All queue logs (tail -f)"
+    echo "1. Process daemon log"
+    echo "2. Queue operations log"
+    echo "3. Node.js service log"
+    echo "4. Service detailed logs"
+    echo "5. Error logs"
+    echo "6. All logs (tail -f)"
     echo
     
-    read -p "Enter your choice (1-7): " choice
+    read -p "Enter your choice (1-6): " choice
     
     case $choice in
         1)
-            tail -f logs/queue_fetcher.log 2>/dev/null || echo "No fetcher log found"
+            tail -f logs/process_daemon.log 2>/dev/null || echo "No process daemon log found"
             ;;
         2)
-            tail -f logs/queue_processor.log 2>/dev/null || echo "No processor log found"
+            tail -f logs/queue_*.log 2>/dev/null || echo "No queue operation logs found"
             ;;
         3)
-            tail -f logs/queue_sender.log 2>/dev/null || echo "No sender log found"
-            ;;
-        4)
             tail -f logs/slack-service.log 2>/dev/null || echo "No service log found"
             ;;
-        5)
+        4)
             tail -f slack-service/logs/combined.log 2>/dev/null || echo "No detailed log found"
             ;;
-        6)
+        5)
             tail -f logs/*_errors.log slack-service/logs/error.log 2>/dev/null || echo "No error logs found"
             ;;
-        7)
-            echo "Tailing all queue logs..."
-            tail -f logs/queue_*.log logs/claude_slack_bot*.log 2>/dev/null || echo "No queue logs found"
+        6)
+            echo "Tailing all logs..."
+            tail -f logs/*.log slack-service/logs/*.log 2>/dev/null || echo "No logs found"
             ;;
         *)
             echo "Invalid choice"
@@ -615,10 +612,10 @@ case "${1:-}" in
         echo "  monitor     - Live queue monitoring"
         echo
         echo -e "${GREEN}Daemon Commands:${NC}"
-        echo "  daemon start       - Start all daemons"
-        echo "  daemon stop        - Stop all daemons"
+        echo "  daemon start       - Start the process daemon"
+        echo "  daemon stop        - Stop the process daemon"
         echo "  daemon status      - Show daemon status"
-        echo "  daemon logs <name> - View daemon logs"
+        echo "  daemon logs        - View daemon logs"
         echo
         echo -e "${GREEN}Queue Operations:${NC}"
         echo "  queue fetch         - Fetch messages from Slack"
@@ -633,16 +630,16 @@ case "${1:-}" in
         echo "  diagnostics - Run system diagnostics"
         echo
         echo -e "${GREEN}Architecture:${NC}"
-        echo "  • Daemon-based: Continuous operation without cron"
-        echo "  • Adaptive daemon: Sends every minute if pending, else fetches"
-        echo "  • Smart scheduling: No wasted fetch operations"
+        echo "  • Single daemon: Process daemon handles all operations"
+        echo "  • Priority mode: Sends responses first, fetches when needed"
+        echo "  • Queue-based: Messages queued in database"
         echo "  • Processor: Reads from DB, uses Claude"
         echo "  • Completely decoupled operations"
         echo "  • All messages preserved for context"
         echo
         echo -e "${GREEN}Quick Start:${NC}"
         echo "  $0 setup          # First time setup"
-        echo "  $0 daemon start   # Start all daemons"
+        echo "  $0 daemon start   # Start the process daemon"
         echo "  $0 status         # Check system status"
         echo "  $0 daemon status  # Check daemon status"
         echo "  $0 monitor        # Watch queue activity"

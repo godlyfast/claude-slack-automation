@@ -11,11 +11,7 @@ ensure_directories
 # Daemon configurations
 get_daemon_script() {
     case "$1" in
-        fetch) echo "daemons/fetch_daemon.sh" ;;
         process) echo "daemons/process_daemon.sh" ;;
-        send) echo "daemons/send_daemon.sh" ;;
-        priority) echo "daemons/priority_daemon.sh" ;;
-        adaptive) echo "daemons/adaptive_daemon.sh" ;;
         *) echo "" ;;
     esac
 }
@@ -120,29 +116,24 @@ stop_daemon() {
 
 # Start all daemons
 start_all() {
-    echo -e "${BLUE}Starting all daemons...${NC}"
+    echo -e "${BLUE}Starting process daemon...${NC}"
     echo
     
-    # Start in priority order
-    start_daemon "send"    # Highest priority
-    start_daemon "process" # Medium priority
-    start_daemon "fetch"   # Lowest priority
+    start_daemon "process"
     
     echo
-    echo -e "${GREEN}All daemons started${NC}"
+    echo -e "${GREEN}Process daemon started${NC}"
 }
 
 # Stop all daemons
 stop_all() {
-    echo -e "${BLUE}Stopping all daemons...${NC}"
+    echo -e "${BLUE}Stopping process daemon...${NC}"
     echo
     
-    for daemon in $ALL_DAEMONS priority; do
-        stop_daemon "$daemon"
-    done
+    stop_daemon "process"
     
     echo
-    echo -e "${GREEN}All daemons stopped${NC}"
+    echo -e "${GREEN}Process daemon stopped${NC}"
 }
 
 # Show daemon status
@@ -154,17 +145,16 @@ show_status() {
     printf "%-12s %-10s %-8s %s\n" "Daemon" "Status" "PID" "Log File"
     printf "%-12s %-10s %-8s %s\n" "------" "------" "---" "--------"
     
-    for daemon in "adaptive" "process" "send" "fetch" "priority"; do
-        local status=$(is_daemon_running "$daemon")
-        local pid=$(get_daemon_pid "$daemon")
-        local log_file="${daemon}_daemon.log"
-        
-        if [ "$status" = "running" ]; then
-            printf "%-12s ${GREEN}%-10s${NC} %-8s %s\n" "$daemon" "running" "$pid" "$log_file"
-        else
-            printf "%-12s ${RED}%-10s${NC} %-8s %s\n" "$daemon" "stopped" "N/A" "$log_file"
-        fi
-    done
+    local daemon="process"
+    local status=$(is_daemon_running "$daemon")
+    local pid=$(get_daemon_pid "$daemon")
+    local log_file="${daemon}_daemon.log"
+    
+    if [ "$status" = "running" ]; then
+        printf "%-12s ${GREEN}%-10s${NC} %-8s %s\n" "$daemon" "running" "$pid" "$log_file"
+    else
+        printf "%-12s ${RED}%-10s${NC} %-8s %s\n" "$daemon" "stopped" "N/A" "$log_file"
+    fi
     
     echo
     echo -e "${BLUE}Queue Status:${NC}"
@@ -176,22 +166,22 @@ show_logs() {
     local daemon=$1
     
     if [ -z "$daemon" ]; then
-        echo "Available daemons: fetch, process, send, priority, all"
-        echo "Usage: $0 logs <daemon>"
+        echo "Available daemon: process"
+        echo "Usage: $0 logs process"
         return 1
     fi
     
-    if [ "$daemon" = "all" ]; then
-        echo -e "${CYAN}Tailing all daemon logs...${NC}"
-        tail -f "$LOG_DIR"/*_daemon.log 2>/dev/null
-    else
-        local log_file="$LOG_DIR/${daemon}_daemon.log"
+    if [ "$daemon" = "all" ] || [ "$daemon" = "process" ]; then
+        local log_file="$LOG_DIR/process_daemon.log"
         if [ -f "$log_file" ]; then
-            echo -e "${CYAN}Tailing $daemon daemon log...${NC}"
+            echo -e "${CYAN}Tailing process daemon log...${NC}"
             tail -f "$log_file"
         else
             echo -e "${RED}Log file not found: $log_file${NC}"
         fi
+    else
+        echo -e "${RED}Unknown daemon: $daemon${NC}"
+        echo "Available daemon: process"
     fi
 }
 
@@ -203,61 +193,43 @@ show_usage() {
     echo "Usage: $0 <command> [options]"
     echo
     echo "Commands:"
-    echo "  start [daemon]   - Start specific daemon or all daemons"
-    echo "  stop [daemon]    - Stop specific daemon or all daemons"
-    echo "  restart [daemon] - Restart specific daemon or all daemons"
+    echo "  start            - Start the process daemon"
+    echo "  stop             - Stop the process daemon"
+    echo "  restart          - Restart the process daemon"
     echo "  status           - Show daemon and queue status"
-    echo "  logs <daemon>    - Tail daemon logs (use 'all' for all logs)"
+    echo "  logs             - Tail process daemon log"
     echo
-    echo "Daemons:"
-    echo "  adaptive - Smart daemon: sends every minute if pending, else fetches (RECOMMENDED)"
-    echo "  process  - Processes messages with Claude (runs every 1 min)"
-    echo "  send     - Sends responses to Slack (runs every 30 sec)"
-    echo "  fetch    - Fetches messages from Slack (runs every 3 min)"
-    echo "  priority - Priority mode: send first, fetch if needed (runs every 45 sec)"
+    echo "Process Daemon:"
+    echo "  The process daemon handles all queue operations through queue_operations.sh"
+    echo "  It runs the priority operation every ${PROCESS_INTERVAL:-60} seconds"
+    echo "  Priority mode: sends responses first, then fetches new messages if needed"
     echo
     echo "Examples:"
-    echo "  $0 start              # Start all daemons"
-    echo "  $0 start send         # Start only send daemon"
-    echo "  $0 stop              # Stop all daemons"
-    echo "  $0 restart process   # Restart process daemon"
-    echo "  $0 status            # Show status"
-    echo "  $0 logs send         # Tail send daemon log"
-    echo "  $0 logs all          # Tail all daemon logs"
+    echo "  $0 start         # Start the process daemon"
+    echo "  $0 stop          # Stop the process daemon"
+    echo "  $0 restart       # Restart the process daemon"
+    echo "  $0 status        # Show status"
+    echo "  $0 logs          # Tail process daemon log"
 }
 
 # Main command handling
 case "${1:-}" in
     start)
-        if [ -z "$2" ]; then
-            start_all
-        else
-            start_daemon "$2"
-        fi
+        start_all
         ;;
     stop)
-        if [ -z "$2" ]; then
-            stop_all
-        else
-            stop_daemon "$2"
-        fi
+        stop_all
         ;;
     restart)
-        if [ -z "$2" ]; then
-            stop_all
-            sleep 2
-            start_all
-        else
-            stop_daemon "$2"
-            sleep 2
-            start_daemon "$2"
-        fi
+        stop_all
+        sleep 2
+        start_all
         ;;
     status)
         show_status
         ;;
     logs)
-        show_logs "$2"
+        show_logs "process"
         ;;
     *)
         show_usage
