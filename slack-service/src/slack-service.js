@@ -39,6 +39,29 @@ class SlackService {
     };
 
     logger.info('SlackService initialized with file attachment support');
+    
+    // 🚨 CRITICAL: Flag to prevent Slack API calls during processing
+    this._processingMode = false;
+  }
+
+  /**
+   * 🚨 ENFORCEMENT: Block any Slack API calls during message processing
+   */
+  _enforceNoSlackAPI(operation) {
+    if (this._processingMode) {
+      const error = new Error(`🚨 FORBIDDEN: Attempted to call Slack API (${operation}) during message processing. This violates the architecture.`);
+      logger.error(error.message);
+      throw error;
+    }
+  }
+
+  setProcessingMode(enabled) {
+    this._processingMode = enabled;
+    if (enabled) {
+      logger.warn('🚨 PROCESSING MODE ENABLED: All Slack API calls are now FORBIDDEN');
+    } else {
+      logger.info('Processing mode disabled: Slack API calls allowed');
+    }
   }
 
   /**
@@ -66,6 +89,9 @@ class SlackService {
   }
 
   async _fetchChannelMessages(channelName, since) {
+    // 🚨 ENFORCEMENT: Block this during processing
+    this._enforceNoSlackAPI('_fetchChannelMessages');
+    
     try {
       const channelInfo = await this._getChannelInfo(channelName);
       if (!channelInfo) {
@@ -120,6 +146,9 @@ class SlackService {
   }
 
   async _getChannelInfo(channelName) {
+    // 🚨 ENFORCEMENT: Block this during processing
+    this._enforceNoSlackAPI('_getChannelInfo');
+    
     // Normalize channel name
     const normalizedName = channelName.replace(/^#/, '');
     
@@ -285,6 +314,9 @@ class SlackService {
   }
 
   async postResponse(message, responseText) {
+    // 🚨 ENFORCEMENT: Block this during processing
+    this._enforceNoSlackAPI('chat.postMessage');
+    
     try {
       // Record this as a response attempt
       this.loopPrevention.recordResponse(message.channel, message.thread_ts || message.ts, responseText);
@@ -325,6 +357,9 @@ class SlackService {
   }
 
   async getChannelHistory(channelName, limit = 100) {
+    // 🚨 ENFORCEMENT: Block this during processing
+    this._enforceNoSlackAPI('conversations.history');
+    
     try {
       const channelInfo = await this._getChannelInfo(channelName);
       if (!channelInfo) {
@@ -357,6 +392,7 @@ class SlackService {
     }
   }
 
+
   // Utility methods
   getCacheStats() {
     return cache.getStats();
@@ -367,6 +403,9 @@ class SlackService {
   }
 
   async warmCache() {
+    // 🚨 ENFORCEMENT: Block this during processing
+    this._enforceNoSlackAPI('warmCache');
+    
     logger.info('Warming up cache...');
     for (const channel of this.config.channels) {
       try {

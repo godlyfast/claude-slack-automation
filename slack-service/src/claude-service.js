@@ -149,9 +149,14 @@ Please use the Read tool to analyze this file:
     }
 
     // Build the complete instruction
-    const instruction = `You are a helpful Slack bot assistant. Generate a response to this message.
-
-You have access to the recent channel history below, which provides context for the conversation. Use this history to understand references to previous messages, people mentioned, or ongoing discussions.${channelHistoryContext}${threadContextText}
+    let historyIntro = '';
+    if (channelHistory.length > 0) {
+      historyIntro = '\n\nYou have access to the recent channel history below, which provides context for the conversation. Use this history to understand references to previous messages, people mentioned, or ongoing discussions.';
+    } else {
+      historyIntro = '\n\nNote: No recent channel history is available.';
+    }
+    
+    const instruction = `You are a helpful Slack bot assistant. Generate a response to this message.${historyIntro}${channelHistoryContext}${threadContextText}
 
 Current message: ${messageText}${attachmentContext || ''}${fileInstruction}
 

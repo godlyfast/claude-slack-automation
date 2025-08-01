@@ -28,14 +28,24 @@ fetch_messages() {
     # Set up cleanup trap
     trap cleanup_slack_lock EXIT
     
-    local max_retries="${MAX_RETRIES:-1000}"
+    local max_retries="${MAX_RETRIES:-3}"  # Reduced from 1000 to prevent infinite loops
     local retry_count=0
     local success=false
+    local start_time=$(date +%s)
+    local timeout_seconds="${FETCH_TIMEOUT:-300}"  # 5 minute timeout
     
     while [ $retry_count -lt $max_retries ] && [ "$success" = "false" ]; do
         retry_count=$((retry_count + 1))
         
-        log "$FETCH_LOG" "Attempt $retry_count: Fetching messages from Slack..."
+        # Check timeout
+        local current_time=$(date +%s)
+        local elapsed=$((current_time - start_time))
+        if [ $elapsed -gt $timeout_seconds ]; then
+            log_error "$FETCH_LOG" "Fetch operation timed out after ${elapsed} seconds"
+            return 1
+        fi
+        
+        log "$FETCH_LOG" "Attempt $retry_count/$max_retries: Fetching messages from Slack..."
         
         # Acquire lock before making Slack API request
         if ! acquire_slack_lock; then
@@ -43,9 +53,9 @@ fetch_messages() {
             return 1
         fi
         
-        # Execute API call in a subshell to ensure lock release
+        # Execute API call with timeout
         (
-            RESULT=$(curl -s -X POST "${SERVICE_URL}/queue/messages" 2>&1)
+            RESULT=$(timeout ${API_TIMEOUT} curl -s -m ${API_TIMEOUT} -X POST "${SERVICE_URL}/queue/messages" 2>&1)
             EXIT_CODE=$?
             echo "$RESULT" > "${TEMP_DIR}/fetch_result.tmp"
             echo "$EXIT_CODE" > "${TEMP_DIR}/fetch_exit.tmp"
@@ -68,10 +78,30 @@ fetch_messages() {
             ERROR_MSG=$(echo "$RESULT" | jq -r '.error // "Unknown error"' 2>/dev/null || echo "$RESULT")
             
             if echo "$ERROR_MSG" | grep -q "rate limit"; then
-                log "$FETCH_LOG" "Rate limited by Slack API. Waiting ${QUEUE_RETRY_DELAY} seconds before retry..."
-                sleep ${QUEUE_RETRY_DELAY}
+                # Extract retry-after value if available (usually 60 seconds for Slack)
+                RETRY_AFTER=$(echo "$ERROR_MSG" | grep -oE "retry-after: [0-9]+" | grep -oE "[0-9]+" || echo "${QUEUE_RETRY_DELAY}")
+                log "$FETCH_LOG" "Rate limited by Slack API. Waiting ${RETRY_AFTER} seconds as per retry-after header..."
+                
+                # Check if waiting would exceed timeout
+                local current_time=$(date +%s)
+                local elapsed=$((current_time - start_time))
+                local remaining=$((timeout_seconds - elapsed))
+                if [ $RETRY_AFTER -gt $remaining ]; then
+                    log_error "$FETCH_LOG" "Rate limit wait time ($RETRY_AFTER seconds) exceeds remaining timeout. Exiting."
+                    return 1
+                fi
+                
+                # Add 5 seconds buffer to avoid hitting limit immediately again
+                sleep $((RETRY_AFTER + 5))
             else
                 log_error "$FETCH_LOG" "$ERROR_MSG"
+                
+                # Exit on connection errors to avoid infinite loops
+                if echo "$ERROR_MSG" | grep -qE "(Connection refused|Failed to connect|timeout|Could not resolve)"; then
+                    log_error "$FETCH_LOG" "Service connection error. Exiting."
+                    return 1
+                fi
+                
                 log "$FETCH_LOG" "Waiting 10 seconds before retry..."
                 sleep 10
             fi
@@ -167,12 +197,22 @@ send_responses() {
     # Set up cleanup trap
     trap cleanup_slack_lock EXIT
     
-    local max_retries="${MAX_RETRIES:-1000}"
+    local max_retries="${MAX_RETRIES:-3}"  # Reduced from 1000 to prevent infinite loops
     local retry_count=0
     local all_sent=false
+    local start_time=$(date +%s)
+    local timeout_seconds="${SEND_TIMEOUT:-300}"  # 5 minute timeout
     
     while [ $retry_count -lt $max_retries ] && [ "$all_sent" = "false" ]; do
         retry_count=$((retry_count + 1))
+        
+        # Check timeout
+        local current_time=$(date +%s)
+        local elapsed=$((current_time - start_time))
+        if [ $elapsed -gt $timeout_seconds ]; then
+            log_error "$SEND_LOG" "Send operation timed out after ${elapsed} seconds"
+            return 1
+        fi
         
         # Check pending count
         PENDING_COUNT=$(get_db_count "response_queue" "status='pending'")

@@ -352,10 +352,12 @@ show_status() {
         echo -e "Claude Process:  ${GRAY}○ Not running${NC}"
     fi
     
-    # Check for running fetch operation
+    # Check for running fetch operation (exclude child processes)
     FETCH_PIDS=$(pgrep -f "queue_operations.sh fetch" 2>/dev/null || true)
     if [ -n "$FETCH_PIDS" ]; then
-        for PID in $FETCH_PIDS; do
+        # Only show the parent process (lowest PID)
+        PARENT_PID=$(echo "$FETCH_PIDS" | tr ' ' '\n' | sort -n | head -1)
+        for PID in $PARENT_PID; do
             if [ "$(uname)" = "Darwin" ]; then
                 START_TIME=$(ps -o lstart= -p "$PID" 2>/dev/null || echo "")
                 if [ -n "$START_TIME" ]; then
@@ -379,10 +381,12 @@ show_status() {
         echo -e "Fetch Operation: ${GRAY}○ Not running${NC}"
     fi
     
-    # Check for running send operation
+    # Check for running send operation (exclude child processes)
     SEND_PIDS=$(pgrep -f "queue_operations.sh send" 2>/dev/null || true)
     if [ -n "$SEND_PIDS" ]; then
-        for PID in $SEND_PIDS; do
+        # Only show the parent process (lowest PID)
+        PARENT_PID=$(echo "$SEND_PIDS" | tr ' ' '\n' | sort -n | head -1)
+        for PID in $PARENT_PID; do
             if [ "$(uname)" = "Darwin" ]; then
                 START_TIME=$(ps -o lstart= -p "$PID" 2>/dev/null || echo "")
                 if [ -n "$START_TIME" ]; then

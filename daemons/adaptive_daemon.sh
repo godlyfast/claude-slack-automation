@@ -107,6 +107,11 @@ while $RUNNING; do
         break
     fi
     
+    # Run monitor to check for stuck operations (every 5 minutes)
+    if [ $((LOOP_COUNT % 5)) -eq 0 ]; then
+        "$SCRIPT_DIR/scripts/monitor_operations.sh" >> "$DAEMON_LOG" 2>&1
+    fi
+    
     # Sleep for one minute (check every second for shutdown signal)
     for ((i=0; i<$SEND_CHECK_INTERVAL && $RUNNING; i++)); do
         sleep 1

@@ -57,6 +57,21 @@
 4. **Scalability**: Each layer can scale independently
 5. **Testability**: Each component can be tested in isolation
 
+### Critical Rules for Channel History
+
+**NEVER fetch channel history from Slack API when processing messages!**
+
+Channel history for Claude MUST come from the database:
+- ✅ Use `db.getChannelHistoryFromDB()` 
+- ❌ NEVER use `slackService.getChannelHistory()` for Claude
+- ❌ NEVER make Slack API calls during message processing
+
+This is critical because:
+1. Reduces Slack API calls by 90%+
+2. Prevents rate limiting during processing
+3. Uses already-fetched messages from the database
+4. Maintains the core efficiency principle of the architecture
+
 ### Implementation Details
 
 #### claude-service.js

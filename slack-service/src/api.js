@@ -153,16 +153,21 @@ class API {
           });
         }
 
-        // Get unique channels for pre-fetching
-        const uniqueChannels = [...new Set(messages
-          .map(m => m.channelName)
-          .filter(c => c))];
+        // 🚨 ENABLE PROCESSING MODE - NO SLACK API CALLS ALLOWED FROM HERE
+        this.slackService.setProcessingMode(true);
+        
+        try {
+          // Get unique channels for pre-fetching
+          const uniqueChannels = [...new Set(messages
+            .map(m => m.channelName)
+            .filter(c => c))];
 
-        // Pre-fetch channel histories
-        const channelHistories = await this.claudeService.prefetchChannelHistories(
-          uniqueChannels,
-          (channel, limit) => this.slackService.getChannelHistory(channel, limit)
-        );
+          // Pre-fetch channel histories FROM DATABASE (not Slack API)
+          // This is critical for reducing API usage
+          const channelHistories = await this.claudeService.prefetchChannelHistories(
+            uniqueChannels,
+            (channel, limit) => this.slackService.db.getChannelHistoryFromDB(channel, limit)
+          );
 
         const results = [];
         
@@ -231,13 +236,19 @@ class API {
           }
         }
 
-        res.json({
-          success: true,
-          processed: results.length,
-          results
-        });
+          res.json({
+            success: true,
+            processed: results.length,
+            results
+          });
+        } finally {
+          // 🚨 DISABLE PROCESSING MODE - SLACK API CALLS ALLOWED AGAIN
+          this.slackService.setProcessingMode(false);
+        }
         
       } catch (error) {
+        // Ensure processing mode is disabled on error
+        this.slackService.setProcessingMode(false);
         handleErrorResponse(res, error, 'processing messages with Claude');
       }
     });
@@ -359,68 +370,81 @@ class API {
           });
         }
         
-        // Mark all messages as processing first (in parallel)
-        await Promise.all(
-          messages.map(msg => 
-            this.slackService.db.updateMessageStatus(msg.message_id, 'processing')
-          )
-        );
+        // 🚨 ENABLE PROCESSING MODE - NO SLACK API CALLS ALLOWED
+        this.slackService.setProcessingMode(true);
         
-        // Process all messages in parallel
-        const results = await Promise.all(
-          messages.map(async (message) => {
-            try {
-              // Prepare message object (no API calls, just DB data)
-              const messageObj = {
-                id: message.message_id,
-                text: message.text,
-                user: message.user_id,
-                channel: message.channel_id,
-                channelName: message.channel_name,
-                ts: message.message_id,
-                thread_ts: message.thread_ts,
-                isThreadReply: !!message.thread_ts,
-                hasAttachments: message.has_attachments,
-                filePaths: message.file_paths ? JSON.parse(message.file_paths) : []
-              };
-              
-              // Process with Claude (this is the only external call)
-              const response = await this.claudeService.processMessage(messageObj, []);
-              
-              // Queue the response (parallel DB operations)
-              await Promise.all([
-                this.slackService.db.queueResponse(
-                  message.message_id,
-                  message.channel_id,
-                  message.thread_ts,
-                  response
-                ),
-                this.slackService.db.updateMessageStatus(message.message_id, 'processed')
-              ]);
-              
-              return {
-                messageId: message.message_id,
-                success: true
-              };
-            } catch (error) {
-              logger.error(`Failed to process message ${message.message_id}:`, error);
-              await this.slackService.db.updateMessageStatus(message.message_id, 'error', error.message);
-              return {
-                messageId: message.message_id,
-                success: false,
-                error: error.message
-              };
-            }
-          })
-        );
-        
-        res.json({
-          success: true,
-          processed: results.filter(r => r.success).length,
-          failed: results.filter(r => !r.success).length,
-          results
-        });
+        try {
+          // Mark all messages as processing first (in parallel)
+          await Promise.all(
+            messages.map(msg => 
+              this.slackService.db.updateMessageStatus(msg.message_id, 'processing')
+            )
+          );
+          
+          // Process all messages in parallel
+          const results = await Promise.all(
+            messages.map(async (message) => {
+              try {
+                // Prepare message object (no API calls, just DB data)
+                const messageObj = {
+                  id: message.message_id,
+                  text: message.text,
+                  user: message.user_id,
+                  channel: message.channel_id,
+                  channelName: message.channel_name,
+                  ts: message.message_id,
+                  thread_ts: message.thread_ts,
+                  isThreadReply: !!message.thread_ts,
+                  hasAttachments: message.has_attachments,
+                  filePaths: message.file_paths ? JSON.parse(message.file_paths) : []
+                };
+                
+                // Process with Claude (this is the only external call)
+                const response = await this.claudeService.processMessage(messageObj, []);
+                
+                // Queue the response (parallel DB operations)
+                await Promise.all([
+                  this.slackService.db.queueResponse(
+                    message.message_id,
+                    message.channel_id,
+                    message.thread_ts,
+                    response
+                  ),
+                  this.slackService.db.updateMessageStatus(message.message_id, 'processed')
+                ]);
+                
+                return {
+                  messageId: message.message_id,
+                  success: true
+                };
+              } catch (error) {
+                logger.error(`Failed to process message ${message.message_id}:`, error);
+                await this.slackService.db.updateMessageStatus(message.message_id, 'error', error.message);
+                return {
+                  messageId: message.message_id,
+                  success: false,
+                  error: error.message
+                };
+              }
+            })
+          );
+          
+          // 🚨 DISABLE PROCESSING MODE
+          this.slackService.setProcessingMode(false);
+          
+          res.json({
+            success: true,
+            processed: results.filter(r => r.success).length,
+            failed: results.filter(r => !r.success).length,
+            results
+          });
+        } finally {
+          // ALWAYS disable processing mode, even on error
+          this.slackService.setProcessingMode(false);
+        }
       } catch (error) {
+        // Ensure processing mode is disabled on error
+        this.slackService.setProcessingMode(false);
         handleErrorResponse(res, error, 'processing queue messages');
       }
     });

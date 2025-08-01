@@ -344,6 +344,34 @@ class Database {
     });
   }
 
+  async getChannelHistoryFromDB(channelName, limit = 100) {
+    return new Promise((resolve, reject) => {
+      // Get recent messages from the database for the channel
+      this.db.all(
+        `SELECT message_id, channel_id, channel_name, user_id, text, fetched_at as ts
+         FROM message_queue 
+         WHERE channel_name = ? 
+         ORDER BY fetched_at DESC 
+         LIMIT ?`,
+        [channelName, limit],
+        (err, rows) => {
+          if (err) {
+            reject(err);
+          } else {
+            // Format messages to match Slack API format for compatibility
+            const messages = (rows || []).map(row => ({
+              ts: row.message_id || row.ts,
+              user: row.user_id,
+              text: row.text,
+              channel: row.channel_id
+            })).reverse(); // Reverse to get chronological order
+            resolve(messages);
+          }
+        }
+      );
+    });
+  }
+
   async updateMessageStatus(messageId, status, errorMessage = null) {
     return new Promise((resolve, reject) => {
       this.db.run(

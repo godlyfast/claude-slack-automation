@@ -29,6 +29,11 @@ Slack API ──▶ Database ──▶ Claude ──▶ Database ──▶ Slack
 - Use Slack MCP tools
 - Send messages directly to Slack
 
+**CRITICAL: Channel History**:
+- Channel history for Claude MUST come from the database (message_queue table)
+- NEVER fetch channel history from Slack API during processing
+- This prevents rate limiting and maintains efficiency
+
 See `docs/ARCHITECTURE.md` for complete architectural documentation.
 
 ### Components
@@ -146,6 +151,11 @@ See docs/ENVIRONMENT_CONFIGURATION.md for complete list of all configuration opt
 13. **Timeout Handling**: Posts helpful message when Claude times out with instructions
 14. **Thread Replies**: Bot ALWAYS sends responses as thread replies (using thread_ts) - NEVER as regular channel messages
 15. **API Lock Mechanism**: Fetch and send operations use a global lock to prevent concurrent Slack API requests
+16. **Enforcement System**: Runtime checks prevent ANY Slack API calls during message processing:
+    - `_enforceNoSlackAPI()` method blocks all API calls when in processing mode
+    - `/messages/process-with-claude` and `/queue/process` enable processing mode
+    - Channel history MUST come from database during processing, NEVER from Slack API
+    - Test with `./test_enforcement.js` to verify enforcement is working
 
 ## Troubleshooting
 
