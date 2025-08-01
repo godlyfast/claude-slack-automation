@@ -5,6 +5,7 @@ const cache = require('./cache');
 const channelRotator = require('./channel-rotator');
 const LoopPreventionSystem = require('./loop-prevention');
 const FileHandler = require('./file-handler');
+const globalRateLimiter = require('./global-rate-limiter').getInstance();
 
 class SlackService {
   constructor(token, config) {
@@ -125,6 +126,9 @@ class SlackService {
         return cachedMessages;
       }
 
+      // Wait for rate limit slot
+      await globalRateLimiter.waitForNextSlot();
+
       logger.info(`🔵 SLACK API CALL: conversations.history for ${channelName}`);
       const startTime = Date.now();
 
@@ -135,6 +139,9 @@ class SlackService {
         limit: Math.min(this.config.maxMessages, 15),  // Limit to 15 per Slack 2025 API limits
         inclusive: false
       });
+      
+      // Record the API call
+      globalRateLimiter.recordApiCall('conversations.history');
 
       const duration = Date.now() - startTime;
       logger.info(`✅ SLACK API SUCCESS: conversations.history (${duration}ms)`);
@@ -176,6 +183,9 @@ class SlackService {
     }
 
     try {
+      // Wait for rate limit slot
+      await globalRateLimiter.waitForNextSlot();
+      
       logger.info(`🔵 SLACK API CALL: conversations.list to find ${channelName}`);
       const startTime = Date.now();
 
@@ -187,6 +197,9 @@ class SlackService {
           limit: 200,  // Recommended limit per best practices
           cursor: cursor
         });
+        
+        // Record the API call
+        globalRateLimiter.recordApiCall('conversations.list');
 
         if (!result.ok) {
           throw new Error(result.error || 'Failed to list channels');
@@ -337,6 +350,9 @@ class SlackService {
       // Record this as a response attempt
       this.loopPrevention.recordResponse(message.channel, message.thread_ts || message.ts, responseText);
 
+      // Wait for rate limit slot
+      await globalRateLimiter.waitForNextSlot();
+
       logger.info(`🔵 SLACK API CALL: chat.postMessage`);
       const startTime = Date.now();
 
@@ -346,6 +362,9 @@ class SlackService {
         text: responseText,
         thread_ts: message.thread_ts || message.ts  // ALWAYS post as thread reply
       });
+      
+      // Record the API call
+      globalRateLimiter.recordApiCall('chat.postMessage');
 
       const duration = Date.now() - startTime;
       logger.info(`✅ SLACK API SUCCESS: chat.postMessage (${duration}ms)`);
@@ -384,11 +403,17 @@ class SlackService {
 
       logger.info(`Fetching ${limit} messages from channel ${channelName}`);
       
+      // Wait for rate limit slot
+      await globalRateLimiter.waitForNextSlot();
+      
       // Direct API call - SDK handles rate limiting
       const result = await this.client.conversations.history({
         channel: channelInfo.id,
         limit: Math.min(limit, 15) // Cap at 15 per Slack 2025 API limits
       });
+      
+      // Record the API call
+      globalRateLimiter.recordApiCall('conversations.history');
 
       if (!result.ok) {
         throw new Error(result.error || 'Failed to fetch channel history');

@@ -7,6 +7,14 @@ As of May 29, 2025, Slack enforces strict limits for non-marketplace apps:
 - **15 messages max per request**
 - **Affects**: conversations.history, conversations.replies
 
+## 🌐 Global Rate Limiter Implementation
+
+The bot now includes a **strict global rate limiter** that ensures:
+- ⚠️ **Maximum 1 Slack API call per minute across ALL operations**
+- 🕒 Automatic queuing and waiting for the next available slot
+- 📊 Real-time tracking of API usage and wait times
+- 🔒 Thread-safe implementation prevents race conditions
+
 ## 📊 Impact Analysis
 
 | Channels | Check Time | Response Delay |
@@ -75,6 +83,34 @@ Minute 3: #ai-sales-assistant (repeat)
 1. **Normal**: Use API with rate limits
 2. **Fallback**: Switch to Playwright
 3. **Emergency**: Queue messages for later
+
+## 🎯 Global Rate Limiter Features
+
+### How It Works
+1. **Before any API call**: System checks if 60 seconds have passed since last call
+2. **If too soon**: Automatically waits until the next slot is available
+3. **After API call**: Records timestamp for next rate limit check
+4. **Persistent state**: Survives restarts, tracks usage across all processes
+
+### API Endpoints
+```bash
+# Check current rate limit status
+curl http://localhost:3030/rate-limit/status | jq
+
+# Reset rate limiter (emergency use only)
+curl -X POST http://localhost:3030/rate-limit/reset
+```
+
+### Rate Limit Status Response
+```json
+{
+  "totalCalls": 42,
+  "blockedCalls": 5,
+  "lastApiCall": "2025-01-15T10:30:00.000Z",
+  "nextCallAllowedIn": 45,
+  "canCallNow": false
+}
+```
 
 ## 🚀 Future Solutions
 

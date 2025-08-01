@@ -7,6 +7,20 @@ jest.mock('../src/cache');
 jest.mock('../src/loop-prevention');
 jest.mock('../src/file-handler');
 jest.mock('../src/channel-rotator');
+jest.mock('../src/global-rate-limiter', () => ({
+  getInstance: () => ({
+    waitForNextSlot: jest.fn().mockResolvedValue(true),
+    recordApiCall: jest.fn(),
+    canMakeApiCall: jest.fn().mockReturnValue({ allowed: true, waitTime: 0 }),
+    getStats: jest.fn().mockReturnValue({
+      totalCalls: 0,
+      blockedCalls: 0,
+      lastApiCall: 'Never',
+      nextCallAllowedIn: 0,
+      canCallNow: true
+    })
+  })
+}));
 
 describe('SlackService', () => {
   let slackService;

@@ -3,6 +3,7 @@ const SlackService = require('./slack-service');
 const ClaudeService = require('./claude-service');
 const logger = require('./logger');
 const { withTimeout, handleErrorResponse } = require('./utils');
+const globalRateLimiter = require('./global-rate-limiter').getInstance();
 
 class API {
   constructor(slackService) {
@@ -24,6 +25,28 @@ class API {
   setupRoutes() {
     this.app.get('/health', (req, res) => {
       res.json({ status: 'ok', timestamp: new Date().toISOString() });
+    });
+
+    // Rate limit status endpoint
+    this.app.get('/rate-limit/status', (req, res) => {
+      const stats = globalRateLimiter.getStats();
+      res.json({
+        success: true,
+        rateLimitStats: {
+          ...stats,
+          enforcedLimit: '1 call per minute',
+          description: 'Global rate limiter ensures no more than 1 Slack API call per minute'
+        }
+      });
+    });
+
+    // Reset rate limit tracker (for testing/emergency use)
+    this.app.post('/rate-limit/reset', (req, res) => {
+      globalRateLimiter.reset();
+      res.json({
+        success: true,
+        message: 'Rate limit tracker has been reset'
+      });
     });
 
     this.app.get('/messages/unresponded', async (req, res) => {
