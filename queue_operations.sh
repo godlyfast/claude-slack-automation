@@ -82,25 +82,33 @@ fetch_messages() {
                 # Extract retry-after value from JSON response if available
                 RETRY_AFTER=$(echo "$RESULT" | jq -r '.retryAfter // 0' 2>/dev/null)
                 
-                # If no retryAfter in response, use default
-                if [ "$RETRY_AFTER" -eq 0 ]; then
-                    RETRY_AFTER="${QUEUE_RETRY_DELAY}"
-                    log "$FETCH_LOG" "Rate limited by Slack API. No retry-after value found, using default ${RETRY_AFTER} seconds..."
-                else
-                    log "$FETCH_LOG" "Rate limited by Slack API. Waiting ${RETRY_AFTER} seconds as per retry-after value..."
+                # Implement exponential backoff
+                local base_wait=$RETRY_AFTER
+                if [ "$base_wait" -eq 0 ]; then
+                    base_wait="${QUEUE_RETRY_DELAY}"
                 fi
+                
+                # Calculate exponential backoff: base * 2^(retry_count-1)
+                local backoff_multiplier=$((2 ** (retry_count - 1)))
+                local wait_time=$((base_wait * backoff_multiplier))
+                
+                # Cap maximum wait time at 10 minutes
+                if [ $wait_time -gt 600 ]; then
+                    wait_time=600
+                fi
+                
+                log "$FETCH_LOG" "Rate limited by Slack API. Waiting ${wait_time} seconds (exponential backoff: attempt $retry_count)..."
                 
                 # Check if waiting would exceed timeout
                 local current_time=$(date +%s)
                 local elapsed=$((current_time - start_time))
                 local remaining=$((timeout_seconds - elapsed))
-                if [ $RETRY_AFTER -gt $remaining ]; then
-                    log_error "$FETCH_LOG" "Rate limit wait time ($RETRY_AFTER seconds) exceeds remaining timeout. Exiting."
+                if [ $wait_time -gt $remaining ]; then
+                    log_error "$FETCH_LOG" "Rate limit wait time ($wait_time seconds) exceeds remaining timeout. Exiting."
                     return 1
                 fi
                 
-                # Add 5 seconds buffer to avoid hitting limit immediately again
-                sleep $((RETRY_AFTER + 5))
+                sleep $wait_time
             else
                 log_error "$FETCH_LOG" "$ERROR_MSG"
                 
@@ -290,24 +298,33 @@ send_responses() {
                 # Extract retry-after value from JSON response if available
                 RETRY_AFTER=$(echo "$RESULT" | jq -r '.retryAfter // 0' 2>/dev/null)
                 
-                # If no retryAfter in response, use default
-                if [ "$RETRY_AFTER" -eq 0 ]; then
-                    RETRY_AFTER="${QUEUE_RETRY_DELAY}"
-                    log "$SEND_LOG" "Rate limited. No retry-after value found, using default ${RETRY_AFTER} seconds..."
-                else
-                    log "$SEND_LOG" "Rate limited. Waiting ${RETRY_AFTER} seconds as per retry-after value..."
+                # Implement exponential backoff
+                local base_wait=$RETRY_AFTER
+                if [ "$base_wait" -eq 0 ]; then
+                    base_wait="${QUEUE_RETRY_DELAY}"
                 fi
+                
+                # Calculate exponential backoff: base * 2^(retry_count-1)
+                local backoff_multiplier=$((2 ** (retry_count - 1)))
+                local wait_time=$((base_wait * backoff_multiplier))
+                
+                # Cap maximum wait time at 10 minutes
+                if [ $wait_time -gt 600 ]; then
+                    wait_time=600
+                fi
+                
+                log "$SEND_LOG" "Rate limited. Waiting ${wait_time} seconds (exponential backoff: attempt $retry_count)..."
                 
                 # Check if waiting would exceed timeout
                 local current_time=$(date +%s)
                 local elapsed=$((current_time - start_time))
                 local remaining=$((timeout_seconds - elapsed))
-                if [ $RETRY_AFTER -gt $remaining ]; then
-                    log_error "$SEND_LOG" "Rate limit wait time ($RETRY_AFTER seconds) exceeds remaining timeout. Exiting."
+                if [ $wait_time -gt $remaining ]; then
+                    log_error "$SEND_LOG" "Rate limit wait time ($wait_time seconds) exceeds remaining timeout. Exiting."
                     return 1
                 fi
                 
-                sleep $((RETRY_AFTER + 5))
+                sleep $wait_time
             else
                 log "$SEND_LOG" "Waiting 30 seconds before retry..."
                 sleep 30
