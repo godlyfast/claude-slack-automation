@@ -22,6 +22,7 @@ RED='\033[0;31m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 CYAN='\033[0;36m'
+GRAY='\033[0;90m'
 NC='\033[0m' # No Color
 
 # Function to check if Node.js service is running
@@ -253,6 +254,25 @@ show_status() {
         echo -e "Service Health:  ${RED}● N/A${NC}"
     fi
     
+    # Daemon status
+    echo
+    echo -e "${BLUE}Daemon Status:${NC}"
+    if [ -f "./daemon_control.sh" ]; then
+        # Get daemon status in a compact format
+        # Check adaptive daemon status (strip ANSI codes)
+        DAEMON_LINE=$(./daemon_control.sh status 2>/dev/null | grep "^adaptive" | head -1 | sed 's/\x1b\[[0-9;]*m//g')
+        if echo "$DAEMON_LINE" | grep -q "running"; then
+            ADAPTIVE_PID=$(echo "$DAEMON_LINE" | awk '{print $3}')
+            echo -e "Adaptive Daemon: ${GREEN}● Running${NC} (PID: $ADAPTIVE_PID)"
+            echo -e "                 Sends every minute, fetches when idle"
+        else
+            echo -e "Adaptive Daemon: ${RED}● Stopped${NC}"
+            echo -e "                 ${YELLOW}Run '$0 daemon start adaptive' to enable${NC}"
+        fi
+    else
+        echo -e "Daemon Control:  ${YELLOW}Not available${NC}"
+    fi
+    
     # Queue status
     echo
     echo -e "${BLUE}Queue Status:${NC}"
@@ -298,6 +318,100 @@ show_status() {
         echo -e "${YELLOW}No config.env found${NC}"
     fi
     
+    # Currently running processes
+    echo
+    echo -e "${BLUE}Currently Running:${NC}"
+    
+    # Check for running claude process
+    CLAUDE_PIDS=$(pgrep -f "claude --continue" 2>/dev/null || true)
+    if [ -n "$CLAUDE_PIDS" ]; then
+        for PID in $CLAUDE_PIDS; do
+            # Get process start time and calculate runtime
+            if [ "$(uname)" = "Darwin" ]; then
+                # macOS
+                START_TIME=$(ps -o lstart= -p "$PID" 2>/dev/null || echo "")
+                if [ -n "$START_TIME" ]; then
+                    START_EPOCH=$(date -j -f "%a %b %d %T %Y" "$START_TIME" "+%s" 2>/dev/null || echo "0")
+                    NOW_EPOCH=$(date "+%s")
+                    RUNTIME=$((NOW_EPOCH - START_EPOCH))
+                    RUNTIME_MIN=$((RUNTIME / 60))
+                    RUNTIME_SEC=$((RUNTIME % 60))
+                    echo -e "Claude Process:  ${GREEN}● Running${NC} (PID: $PID, runtime: ${RUNTIME_MIN}m ${RUNTIME_SEC}s)"
+                fi
+            else
+                # Linux
+                RUNTIME=$(ps -o etimes= -p "$PID" 2>/dev/null || echo "0")
+                if [ -n "$RUNTIME" ] && [ "$RUNTIME" != "0" ]; then
+                    RUNTIME_MIN=$((RUNTIME / 60))
+                    RUNTIME_SEC=$((RUNTIME % 60))
+                    echo -e "Claude Process:  ${GREEN}● Running${NC} (PID: $PID, runtime: ${RUNTIME_MIN}m ${RUNTIME_SEC}s)"
+                fi
+            fi
+        done
+    else
+        echo -e "Claude Process:  ${GRAY}○ Not running${NC}"
+    fi
+    
+    # Check for running fetch operation
+    FETCH_PIDS=$(pgrep -f "queue_operations.sh fetch" 2>/dev/null || true)
+    if [ -n "$FETCH_PIDS" ]; then
+        for PID in $FETCH_PIDS; do
+            if [ "$(uname)" = "Darwin" ]; then
+                START_TIME=$(ps -o lstart= -p "$PID" 2>/dev/null || echo "")
+                if [ -n "$START_TIME" ]; then
+                    START_EPOCH=$(date -j -f "%a %b %d %T %Y" "$START_TIME" "+%s" 2>/dev/null || echo "0")
+                    NOW_EPOCH=$(date "+%s")
+                    RUNTIME=$((NOW_EPOCH - START_EPOCH))
+                    RUNTIME_MIN=$((RUNTIME / 60))
+                    RUNTIME_SEC=$((RUNTIME % 60))
+                    echo -e "Fetch Operation: ${GREEN}● Running${NC} (PID: $PID, runtime: ${RUNTIME_MIN}m ${RUNTIME_SEC}s)"
+                fi
+            else
+                RUNTIME=$(ps -o etimes= -p "$PID" 2>/dev/null || echo "0")
+                if [ -n "$RUNTIME" ] && [ "$RUNTIME" != "0" ]; then
+                    RUNTIME_MIN=$((RUNTIME / 60))
+                    RUNTIME_SEC=$((RUNTIME % 60))
+                    echo -e "Fetch Operation: ${GREEN}● Running${NC} (PID: $PID, runtime: ${RUNTIME_MIN}m ${RUNTIME_SEC}s)"
+                fi
+            fi
+        done
+    else
+        echo -e "Fetch Operation: ${GRAY}○ Not running${NC}"
+    fi
+    
+    # Check for running send operation
+    SEND_PIDS=$(pgrep -f "queue_operations.sh send" 2>/dev/null || true)
+    if [ -n "$SEND_PIDS" ]; then
+        for PID in $SEND_PIDS; do
+            if [ "$(uname)" = "Darwin" ]; then
+                START_TIME=$(ps -o lstart= -p "$PID" 2>/dev/null || echo "")
+                if [ -n "$START_TIME" ]; then
+                    START_EPOCH=$(date -j -f "%a %b %d %T %Y" "$START_TIME" "+%s" 2>/dev/null || echo "0")
+                    NOW_EPOCH=$(date "+%s")
+                    RUNTIME=$((NOW_EPOCH - START_EPOCH))
+                    RUNTIME_MIN=$((RUNTIME / 60))
+                    RUNTIME_SEC=$((RUNTIME % 60))
+                    echo -e "Send Operation:  ${GREEN}● Running${NC} (PID: $PID, runtime: ${RUNTIME_MIN}m ${RUNTIME_SEC}s)"
+                fi
+            else
+                RUNTIME=$(ps -o etimes= -p "$PID" 2>/dev/null || echo "0")
+                if [ -n "$RUNTIME" ] && [ "$RUNTIME" != "0" ]; then
+                    RUNTIME_MIN=$((RUNTIME / 60))
+                    RUNTIME_SEC=$((RUNTIME % 60))
+                    echo -e "Send Operation:  ${GREEN}● Running${NC} (PID: $PID, runtime: ${RUNTIME_MIN}m ${RUNTIME_SEC}s)"
+                fi
+            fi
+        done
+    else
+        echo -e "Send Operation:  ${GRAY}○ Not running${NC}"
+    fi
+    
+    # Check for bot lock
+    if [ -f "$LOG_DIR/claude_slack_bot.lock" ]; then
+        LOCK_PID=$(cat "$LOG_DIR/claude_slack_bot.lock" 2>/dev/null || echo "unknown")
+        echo -e "Bot Lock:        ${YELLOW}● Active${NC} (PID: $LOCK_PID)"
+    fi
+
     # Recent activity
     echo
     echo -e "${BLUE}Recent Activity:${NC}"
