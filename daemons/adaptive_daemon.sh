@@ -13,7 +13,7 @@ DAEMON_LOG="$LOG_DIR/${DAEMON_NAME}.log"
 DAEMON_ERROR_LOG="$LOG_DIR/${DAEMON_NAME}_errors.log"
 
 # Intervals
-SEND_CHECK_INTERVAL=60      # Check for pending messages every minute
+SEND_CHECK_INTERVAL=180     # Check for pending messages every 3 minutes
 FETCH_COOLDOWN=300          # Wait 5 minutes between fetches (increased due to rate limiting)
 SEND_BATCH_SIZE="${SEND_BATCH_SIZE:-20}"
 FETCH_BATCH_SIZE="${FETCH_BATCH_SIZE:-50}"
@@ -50,7 +50,7 @@ fi
 # Start daemon
 echo $$ > "$PID_FILE"
 log "$DAEMON_LOG" "Starting adaptive daemon (PID: $$)"
-log "$DAEMON_LOG" "Strategy: Send pending messages every minute, fetch when queue is empty"
+log "$DAEMON_LOG" "Strategy: Send pending messages every 3 minutes, fetch when queue is empty"
 
 RUNNING=true
 ERROR_COUNT=0

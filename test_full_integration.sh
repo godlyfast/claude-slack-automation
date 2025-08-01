@@ -119,7 +119,7 @@ sleep 2
 
 # Trigger bot check
 print_status "info" "Triggering bot to check for messages..."
-BOT_RESULT=$($SCRIPT_DIR/claude_slack_bot.sh 2>&1)
+BOT_RESULT=$($SCRIPT_DIR/queue_operations.sh priority 2>&1)
 BOT_EXIT_CODE=$?
 
 if [ $BOT_EXIT_CODE -ne 0 ]; then

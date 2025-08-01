@@ -76,11 +76,11 @@ For testing or occasional use:
 
 ```bash
 # Single run
-./claude_slack_bot.sh
+./queue_operations.sh priority
 
 # Run every minute for an hour
 for i in {1..60}; do
-    ./claude_slack_bot.sh
+    ./queue_operations.sh priority
     sleep 60
 done
 ```
@@ -132,7 +132,7 @@ DEBUG_MODE=false                 # Verbose logging
 
 ```
 claude-slack-automation/
-├── claude_slack_bot.sh  # Main bot script
+├── queue_operations.sh        # Main queue operations script
 ├── config.env                 # Configuration
 ├── setup_macos.sh            # LaunchAgent setup
 ├── daemon.sh                 # Background daemon manager
@@ -183,7 +183,7 @@ chmod +x *.sh
 ### Bot Not Responding
 1. Check logs for errors
 2. Verify Slack channel name in config.env
-3. Test manually: `./claude_slack_bot.sh`
+3. Test manually: `./queue_operations.sh priority`
 4. Ensure Claude has Slack permissions
 
 ## Managing the Bot

@@ -34,6 +34,7 @@
 3. **Database Queues**:
    - `message_queue`: Slack messages waiting for Claude processing
    - `response_queue`: Claude responses waiting to be sent to Slack
+   - See [DATABASE_SCHEMA.md](./DATABASE_SCHEMA.md) for complete database structure
 
 ### The Flow
 

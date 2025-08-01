@@ -34,7 +34,7 @@ Slack API ──▶ Database ──▶ Claude ──▶ Database ──▶ Slack
 - NEVER fetch channel history from Slack API during processing
 - This prevents rate limiting and maintains efficiency
 
-See `docs/ARCHITECTURE.md` for complete architectural documentation.
+See `docs/ARCHITECTURE.md` for complete architectural documentation and `docs/DATABASE_SCHEMA.md` for database structure.
 
 ### Components
 
@@ -52,10 +52,10 @@ See `docs/ARCHITECTURE.md` for complete architectural documentation.
    - Pre-fetches channel histories for efficiency
    - Filters file paths by channel for security
 
-3. **Shell Script** (`claude_slack_bot.sh`):
-   - Simplified to ~130 lines (from ~400)
-   - Only handles: lock files, service health checks, API calls
-   - Delegates all complex logic to Node.js service
+3. **Queue Operations** (`queue_operations.sh`):
+   - Unified script for fetch, process, and send operations
+   - Used by all daemons and manual operations
+   - Supports priority mode (send first, then fetch)
 
 4. **Configuration** (`config.env`):
    - Shared configuration for channels, keywords, and behavior
@@ -84,7 +84,7 @@ See `docs/ARCHITECTURE.md` for complete architectural documentation.
 ### Manual Testing
 ```bash
 # Run bot once manually (sends pending responses first)
-./claude_slack_bot.sh
+./queue_operations.sh priority
 
 # Queue operations with priority
 ./queue_operations.sh priority  # Send first, fetch only if nothing to send

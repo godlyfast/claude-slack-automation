@@ -6,7 +6,7 @@
 claude-slack-automation/
 ├── 🤖 Core Files (Root)
 │   ├── bot_control.sh               # Central management script - RECOMMENDED
-│   ├── claude_slack_bot.sh         # Simplified bot script (~130 lines) - DO NOT DUPLICATE
+│   ├── queue_operations.sh          # Unified queue operations (fetch/process/send)
 │   ├── config.env                   # Configuration - SINGLE SOURCE OF TRUTH
 │   ├── com.claude.slackbot.plist    # macOS LaunchAgent config
 │   └── test_integration.sh          # Basic integration test
@@ -58,8 +58,8 @@ claude-slack-automation/
 │       └── ЗМІСТ_ДОКУМЕНТАЦІЇ.md
 │
 ├── 📊 logs/                         # Generated Log Files (gitignored)
-│   ├── claude_slack_bot.log
-│   ├── claude_slack_bot_errors.log
+│   ├── queue_operations.log
+│   ├── queue_operations_errors.log
 │   └── launchd.*.log
 │
 ├── 📋 Root Documentation
@@ -99,7 +99,7 @@ claude-slack-automation/
 ### 2. 📁 Directory Rules
 
 **Root Directory:**
-- Limited shell scripts: bot_control.sh (management), claude_slack_bot.sh (core), test_integration.sh
+- Limited shell scripts: bot_control.sh (management), queue_operations.sh (core), test_integration.sh
 - No experimental or temporary scripts
 - No data files (txt, json, csv)
 
@@ -126,7 +126,7 @@ claude-slack-automation/
 ### 3. 📝 File Naming Convention
 ```
 ✅ GOOD:
-- claude_slack_bot.sh          # Clear, descriptive name
+- queue_operations.sh          # Clear, descriptive name
 - setup_macos.sh                # Clear purpose and platform
 - CHANGELOG.md                  # Standard naming
 
@@ -220,7 +220,7 @@ fi
 → Use bot_control.sh for all operations
 
 **Need to add a feature?**
-→ Update claude_slack_bot.sh
+→ Update queue_operations.sh or relevant service file
 
 **Need a new utility?**
 → Add to utils/ only if used by main bot

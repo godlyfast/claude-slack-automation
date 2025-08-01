@@ -131,7 +131,7 @@ claude-slack-automation/
 │   ├── logs/                   # Service-specific logs
 │   ├── package.json            # Dependencies (@slack/web-api, sqlite3)
 │   └── .env                    # Service configuration
-├── claude_slack_bot.sh         # Main bot orchestrator
+├── queue_operations.sh         # Unified queue operations (fetch/process/send)
 ├── config.env                  # Bot configuration
 ├── com.claude.slackbot.plist   # macOS LaunchAgent config
 ├── test_integration.sh         # Integration test
@@ -145,6 +145,8 @@ claude-slack-automation/
 ├── scripts/                    # Helper scripts
 │   └── load_env.sh            # Environment loader
 ├── docs/                       # Documentation
+│   ├── ARCHITECTURE.md        # System architecture and isolation
+│   ├── DATABASE_SCHEMA.md     # Complete database structure
 │   ├── BOT_CONTROL.md         # Control script guide
 │   ├── README_macOS.md        # macOS-specific guide
 │   ├── FILE_ATTACHMENTS.md    # File processing guide
@@ -152,8 +154,8 @@ claude-slack-automation/
 │   ├── RATE_LIMITS.md         # Rate limiting strategies
 │   └── ukrainian/             # Ukrainian language guides
 └── logs/                       # Bot execution logs
-    ├── claude_slack_bot.log
-    └── claude_slack_bot_errors.log
+    ├── queue_operations.log
+    └── queue_operations_errors.log
 ```
 
 ## 💻 Usage
@@ -178,7 +180,7 @@ Once installed, the bot runs automatically:
 cd slack-service && npm start &
 
 # Run single bot check
-./claude_slack_bot.sh
+./queue_operations.sh priority
 
 # Test service endpoints
 curl http://localhost:3030/health
@@ -191,10 +193,10 @@ curl http://localhost:3030/messages/unresponded
 ### 📊 Monitoring & Logs
 ```bash
 # View bot execution logs
-tail -f logs/claude_slack_bot.log
+tail -f logs/queue_operations.log
 
 # Check for errors
-tail -f logs/claude_slack_bot_errors.log
+tail -f logs/queue_operations_errors.log
 
 # View Node.js service logs  
 tail -f slack-service/logs/combined.log
@@ -232,7 +234,7 @@ launchctl load ~/Library/LaunchAgents/com.claude.slackbot.plist
 ./utils/daemon.sh start|stop|restart|status|logs
 
 # Emergency cleanup
-pkill -f claude_slack_bot.sh
+pkill -f queue_operations.sh
 ```
 
 ## ⚙️ Configuration Options
@@ -292,7 +294,7 @@ Edit `config.env` to customize bot behavior:
 
 2. **No responses in Slack**
    - Verify Node.js service is running: `curl http://localhost:3030/health`
-   - Check bot logs: `tail -f logs/claude_slack_bot.log`
+   - Check bot logs: `tail -f logs/queue_operations.log`
    - Ensure correct channel names in config.env (include #)
    - Verify trigger keywords match message content
 
@@ -345,7 +347,7 @@ To modify Claude's behavior:
 - Add specific instructions for your use case
 
 The architecture now uses a cleaner separation:
-- **Bash script** (`claude_slack_bot.sh`): Simple orchestrator that calls Node.js endpoints
+- **Queue Operations** (`queue_operations.sh`): Unified script for all queue operations
 - **Claude Service** (`slack-service/src/claude-service.js`): Handles all Claude interaction logic
 - **API** (`slack-service/src/api.js`): Provides REST endpoints including `/messages/process-with-claude`
 

@@ -7,7 +7,8 @@
     
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/timsmyr/claude-slack-automation/claude_slack_bot.sh</string>
+        <string>/Users/timsmyr/claude-slack-automation/queue_operations.sh</string>
+        <string>priority</string>
     </array>
     
     <key>StartInterval</key>

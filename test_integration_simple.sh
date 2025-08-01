@@ -72,10 +72,10 @@ if [ "$SLACK_OK" = false ]; then
     exit 1
 fi
 
-# Test 4: Bot Script Execution
-print_status "info" "Test 4: Testing bot script (dry run)..."
-# Run bot script but it should find no messages since we're not posting test messages
-BOT_OUTPUT=$($SCRIPT_DIR/claude_slack_bot.sh 2>&1)
+# Test 4: Queue Operations Execution
+print_status "info" "Test 4: Testing queue operations (dry run)..."
+# Run queue operations in priority mode but it should find no messages since we're not posting test messages
+BOT_OUTPUT=$($SCRIPT_DIR/queue_operations.sh priority 2>&1)
 BOT_EXIT=$?
 
 if [ $BOT_EXIT -eq 0 ]; then
