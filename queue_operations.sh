@@ -77,10 +77,18 @@ fetch_messages() {
         else
             ERROR_MSG=$(echo "$RESULT" | jq -r '.error // "Unknown error"' 2>/dev/null || echo "$RESULT")
             
-            if echo "$ERROR_MSG" | grep -q "rate limit"; then
-                # Extract retry-after value if available (usually 60 seconds for Slack)
-                RETRY_AFTER=$(echo "$ERROR_MSG" | grep -oE "retry-after: [0-9]+" | grep -oE "[0-9]+" || echo "${QUEUE_RETRY_DELAY}")
-                log "$FETCH_LOG" "Rate limited by Slack API. Waiting ${RETRY_AFTER} seconds as per retry-after header..."
+            # Check if it's a rate limit error
+            if echo "$ERROR_MSG" | grep -qi "rate limit"; then
+                # Extract retry-after value from JSON response if available
+                RETRY_AFTER=$(echo "$RESULT" | jq -r '.retryAfter // 0' 2>/dev/null)
+                
+                # If no retryAfter in response, use default
+                if [ "$RETRY_AFTER" -eq 0 ]; then
+                    RETRY_AFTER="${QUEUE_RETRY_DELAY}"
+                    log "$FETCH_LOG" "Rate limited by Slack API. No retry-after value found, using default ${RETRY_AFTER} seconds..."
+                else
+                    log "$FETCH_LOG" "Rate limited by Slack API. Waiting ${RETRY_AFTER} seconds as per retry-after value..."
+                fi
                 
                 # Check if waiting would exceed timeout
                 local current_time=$(date +%s)
@@ -276,8 +284,34 @@ send_responses() {
         else
             ERROR_MSG=$(echo "$RESULT" | jq -r '.error // "Unknown error"' 2>/dev/null || echo "$RESULT")
             log_error "$SEND_LOG" "$ERROR_MSG"
-            log "$SEND_LOG" "Waiting 30 seconds before retry..."
-            sleep 30
+            
+            # Check if it's a rate limit error
+            if echo "$ERROR_MSG" | grep -qi "rate limit"; then
+                # Extract retry-after value from JSON response if available
+                RETRY_AFTER=$(echo "$RESULT" | jq -r '.retryAfter // 0' 2>/dev/null)
+                
+                # If no retryAfter in response, use default
+                if [ "$RETRY_AFTER" -eq 0 ]; then
+                    RETRY_AFTER="${QUEUE_RETRY_DELAY}"
+                    log "$SEND_LOG" "Rate limited. No retry-after value found, using default ${RETRY_AFTER} seconds..."
+                else
+                    log "$SEND_LOG" "Rate limited. Waiting ${RETRY_AFTER} seconds as per retry-after value..."
+                fi
+                
+                # Check if waiting would exceed timeout
+                local current_time=$(date +%s)
+                local elapsed=$((current_time - start_time))
+                local remaining=$((timeout_seconds - elapsed))
+                if [ $RETRY_AFTER -gt $remaining ]; then
+                    log_error "$SEND_LOG" "Rate limit wait time ($RETRY_AFTER seconds) exceeds remaining timeout. Exiting."
+                    return 1
+                fi
+                
+                sleep $((RETRY_AFTER + 5))
+            else
+                log "$SEND_LOG" "Waiting 30 seconds before retry..."
+                sleep 30
+            fi
         fi
     done
     

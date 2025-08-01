@@ -15,15 +15,18 @@ class SlackService {
         retries: parseInt(process.env.SLACK_RETRY_CONFIG_RETRIES) || 10,
         maxRetryTime: parseInt(process.env.MAX_RETRY_TIME) || 300000
       },
-      // Let SDK handle rate limits automatically
-      rejectRateLimitedCalls: false,
+      // IMPORTANT: We set this to true so we can handle rate limits ourselves
+      // and pass retry-after info back to the shell script
+      rejectRateLimitedCalls: true,
       // Add logging for better debugging
       logLevel: process.env.DEBUG_MODE === 'true' ? 'debug' : process.env.LOG_LEVEL || 'info'
     });
     
-    // Monitor rate limit events
+    // Monitor rate limit events and store the retry-after value
+    this.lastRateLimitRetryAfter = null;
     this.client.on(WebClientEvent.RATE_LIMITED, (numSeconds, request) => {
       logger.warn(`Rate limited by Slack API, retry after ${numSeconds} seconds for ${request.url}`);
+      this.lastRateLimitRetryAfter = numSeconds;
     });
     
     this.db = new Database();
@@ -75,6 +78,9 @@ class SlackService {
     const messages = [];
     const since = new Date(Date.now() - this.config.checkWindow * 60 * 1000).getTime() / 1000;
 
+    // Reset rate limit tracker
+    this.lastRateLimitRetryAfter = null;
+
     for (const channel of this.config.channels) {
       try {
         const channelMessages = await this._fetchChannelMessages(channel, since);
@@ -82,6 +88,16 @@ class SlackService {
         messages.push(...filtered);
       } catch (error) {
         logger.error(`Error fetching messages from ${channel}:`, error);
+        
+        // If we got rate limited, throw the error with retry-after info
+        if (error.code === ErrorCode.RateLimitedError) {
+          const rateLimitError = new Error(`Rate limited while fetching messages`);
+          rateLimitError.retryAfter = error.retryAfter || 60;
+          throw rateLimitError;
+        }
+        
+        // For other errors, throw them too instead of silently continuing
+        throw error;
       }
     }
 

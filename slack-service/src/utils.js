@@ -48,10 +48,19 @@ async function withTimeout(promise, timeoutMs, timeoutMessage) {
  */
 function handleErrorResponse(res, error, context) {
   logger.error(`Error ${context}:`, error);
-  res.status(500).json({
+  
+  const response = {
     success: false,
     error: error.message
-  });
+  };
+  
+  // Include retry-after if it's a rate limit error
+  if (error.retryAfter) {
+    response.retryAfter = error.retryAfter;
+    response.error = `Rate limited: ${error.message} (retry after ${error.retryAfter} seconds)`;
+  }
+  
+  res.status(500).json(response);
 }
 
 module.exports = {
