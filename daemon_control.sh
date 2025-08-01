@@ -21,7 +21,7 @@ get_daemon_script() {
 }
 
 # List of all daemons
-ALL_DAEMONS="adaptive process"  # Adaptive replaces both send and fetch
+ALL_DAEMONS="process"  # Process daemon handles message processing
 
 # Check if daemon is running
 is_daemon_running() {

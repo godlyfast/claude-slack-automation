@@ -49,12 +49,12 @@ case $choice in
     2)
         echo ""
         echo "Starting background daemon..."
-        ./daemon.sh start
+        ./daemon_control.sh start
         echo ""
         echo "Commands:"
-        echo "  Stop:    ./daemon.sh stop"
-        echo "  Status:  ./daemon.sh status"
-        echo "  Logs:    ./daemon.sh logs"
+        echo "  Stop:    ./daemon_control.sh stop"
+        echo "  Status:  ./daemon_control.sh status"
+        echo "  Logs:    ./daemon_control.sh logs"
         ;;
     3)
         echo ""
@@ -62,7 +62,8 @@ case $choice in
         echo "Press Ctrl+C to stop"
         echo ""
         sleep 2
-        ./run_background_loop.sh
+        echo "Error: Background loop script not found. Use daemon method instead."
+        echo "Run: ./daemon_control.sh start"
         ;;
     4)
         echo ""

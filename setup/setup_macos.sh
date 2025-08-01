@@ -127,7 +127,8 @@ case $choice in
         echo "Starting background loop method..."
         echo "This will run in the current terminal. Press Ctrl+C to stop."
         echo ""
-        "$SCRIPT_DIR/run_background_loop.sh"
+        echo "Error: Background loop script not found. Use daemon method instead."
+        echo "Run: ./daemon_control.sh start"
         ;;
     6)
         echo "Exiting..."
