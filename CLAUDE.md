@@ -179,7 +179,7 @@ Common issues:
 
 **NEVER create these files:**
 - Version numbered scripts (v2, v3, etc.) - Update the existing bot instead
-- Test scripts (except test_integration.sh) - Use Claude Code directly
+- Test scripts (except test integration scripts) - Use Claude Code directly
 - Temporary Python scripts - Run one-time tasks in Claude Code
 - Docker-related files - This project is Docker-free
 - Duplicate documentation - Update existing files

@@ -105,7 +105,7 @@ DEBUG_MODE=false                 # Verbose logging
 
 1. **Test the integration:**
    ```bash
-   ./test_integration.sh
+   ./test_integration_simple.sh
    ```
 
 2. **Configure your channel:**
@@ -138,7 +138,7 @@ claude-slack-automation/
 ├── daemon.sh                 # Background daemon manager
 ├── run_background_loop.sh    # Terminal loop runner
 ├── create_app.sh             # Creates clickable app
-├── test_integration.sh       # Test Claude+Slack
+├── test_integration_simple.sh # Test Claude+Slack
 ├── com.claude.slackbot.plist # LaunchAgent config
 └── logs/                     # All logs
     ├── claude_slack_bot.log

@@ -331,7 +331,7 @@ npm install
 find logs/ -name "*.log" -size +10M -exec truncate -s 0 {} \;
 
 # Or use the cleanup utility
-./utils/cleanup.sh
+# Manual cleanup: rm -rf logs/*.log slack-service/temp/*
 ```
 
 ## 🚀 Advanced Usage

@@ -78,16 +78,15 @@ claude-slack-automation/
 
 ## 🧹 Cleaning & Maintenance
 
-**Cleanup Script**: `utils/cleanup.sh`
-- Removes temporary files
-- Clears cache files  
-- Optionally clears log files
-- Shows space saved
+**Manual Cleanup**:
+- Remove temporary files from `slack-service/temp/`
+- Clear old logs from `logs/` directory  
+- Cache files managed automatically
+- Database files preserved by design
 
-**Run cleanup:**
-```bash
-./utils/cleanup.sh
-```
+**Automated cleanup:**
+- Logs can be rotated with system tools
+- Temp files cleared periodically by OS
 
 ## 🚨 STRICT RULES - NO EXCEPTIONS
 

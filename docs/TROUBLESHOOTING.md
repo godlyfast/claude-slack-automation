@@ -174,10 +174,26 @@ cp slack-service/data.backup/slack-bot.db slack-service/data/
 ./bot_control.sh start
 ```
 
+### 🧪 Integration Test Issues
+
+#### Full integration test fails with "Too many recent test messages"
+- The test detects previous test messages in the channel
+- Test messages have [TEST:] prefix to prevent bot responses
+- Solution options:
+  1. Wait 60+ minutes for messages to fall outside CHECK_WINDOW
+  2. Manually delete test messages from Slack channel
+  3. Use `./test_integration_safe.sh` instead (doesn't post messages)
+  4. Run `./test_integration_cleanup.sh` to check test message status
+
+#### Test shows "Claude CLI not responding"
+- Normal in test environment - Claude might timeout
+- Verify manually: `echo "hello" | claude`
+- The bot will still work even if test shows timeout
+
 ## Getting Help
 
 1. **Check logs first** - Most issues are explained in error logs
-2. **Run integration test** - Identifies configuration problems
+2. **Run integration test** - Identifies configuration problems  
 3. **Review configuration** - Ensure config.env is correct
 4. **Check documentation** - See [README.md](../README.md) for setup
 

@@ -109,7 +109,7 @@ Key settings:
 ### 3. Test Integration
 ```bash
 # Test Claude + Node.js integration
-./test_integration.sh
+./test_integration_simple.sh
 
 # Manual test run
 ./claude_slack_bot.sh
@@ -188,7 +188,7 @@ curl ${SERVICE_URL}/health
 curl ${SERVICE_URL}/messages/unresponded
 
 # Run integration test
-./test_integration.sh
+./test_integration_simple.sh
 ```
 
 ### 📊 Monitoring & Logs
