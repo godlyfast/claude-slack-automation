@@ -24,7 +24,7 @@ claude-slack-automation/
 │   ├── src/                         # Source code
 │   │   ├── index.js                 # Main server
 │   │   ├── slack-service.js         # Slack API wrapper
-│   │   ├── claude-service.js        # Claude interaction handler (NEW)
+│   │   ├── llm-processor.js         # LLM interaction handler
 │   │   ├── api.js                   # REST API endpoints
 │   │   ├── db.js                    # SQLite database
 │   │   ├── loop-prevention.js       # Anti-loop system
@@ -33,9 +33,15 @@ claude-slack-automation/
 │   │   ├── rate-limiter.js          # Rate limiting
 │   │   ├── logger.js                # Logging utility
 │   │   └── utils.js                 # Shared utilities
+│   ├── llm-service/               # LLM service implementations
+│   │   ├── base.js                  # Base LLM service class
+│   │   ├── anthropic.js             # Anthropic API implementation
+│   │   ├── openai.js                # OpenAI API implementation
+│   │   ├── google.js                # Google AI API implementation
+│   │   └── factory.js               # LLM service factory
 │   ├── tests/                       # Unit tests
 │   │   ├── slack-service.test.js
-│   │   ├── claude-service.test.js   # Tests for Claude service (NEW)
+│   │   ├── llm-processor.test.js    # Tests for LLM processor
 │   │   ├── api.test.js
 │   │   ├── db.test.js
 │   │   ├── file-handler.test.js
@@ -66,7 +72,6 @@ claude-slack-automation/
 │
 ├── 📋 Root Documentation
 │   ├── README.md                    # Main project documentation
-│   ├── CLAUDE.md                    # Instructions for Claude Code
 │   ├── CHANGELOG.md                 # Version history
 │   └── PROJECT_STRUCTURE.md         # This file
 │

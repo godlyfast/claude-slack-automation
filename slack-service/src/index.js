@@ -17,7 +17,13 @@ function loadConfig() {
     messageCacheTTL: parseInt(process.env.MESSAGE_CACHE_TTL) || 30,
     cacheEnabled: process.env.CACHE_ENABLED !== 'false',
     // Bot token for reading
-    botToken: process.env.SLACK_BOT_TOKEN || null
+    botToken: process.env.SLACK_BOT_TOKEN || null,
+    // LLM configuration
+    llm: {
+      provider: process.env.LLM_PROVIDER || 'anthropic',
+      apiKey: process.env.LLM_API_KEY || null,
+      model: process.env.LLM_MODEL || 'claude-2.1',
+    },
   };
 }
 

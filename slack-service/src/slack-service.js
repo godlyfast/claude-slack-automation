@@ -34,6 +34,7 @@ class SlackService {
     this.loopPrevention = new LoopPreventionSystem(this.db);
     this.fileHandler = new FileHandler(token);
     this.config = {
+      llm: config.llm || {},
       channels: config.channels || [],
       triggerKeywords: config.triggerKeywords || [],
       responseMode: config.responseMode || 'mentions',
@@ -248,9 +249,63 @@ class SlackService {
     }
   }
 
+  async _getUserInfo(userId) {
+    // 🚨 ENFORCEMENT: Block this during processing
+    this._enforceNoSlackAPI('_getUserInfo');
+
+    // Check cache first
+    const cacheKey = `user:${userId}`;
+    const cached = cache.get(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    try {
+      // Wait for rate limit slot
+      await globalRateLimiter.waitForNextSlot();
+
+      logger.info(`🔵 SLACK API CALL: users.info for ${userId}`);
+      const startTime = Date.now();
+
+      // Direct API call - SDK handles rate limiting automatically
+      const result = await this.client.users.info({
+        user: userId,
+      });
+
+      // Record the API call
+      globalRateLimiter.recordApiCall('users.info');
+
+      const duration = Date.now() - startTime;
+      logger.info(`✅ SLACK API SUCCESS: users.info (${duration}ms)`);
+
+      if (!result.ok) {
+        throw new Error(result.error || 'Failed to fetch user info');
+      }
+
+      const userInfo = {
+        id: result.user.id,
+        name: result.user.name,
+        real_name: result.user.real_name,
+        is_bot: result.user.is_bot,
+      };
+
+      // Cache for 1 hour
+      cache.set(cacheKey, userInfo, 3600);
+      return userInfo;
+    } catch (error) {
+      if (error.code === ErrorCode.RateLimitedError) {
+        logger.warn(`Rate limited while fetching user info for ${userId}, SDK will retry`);
+        throw error;
+      }
+
+      logger.error(`Error fetching user info for ${userId}:`, error);
+      throw error;
+    }
+  }
+
   async _filterMessages(messages, channelName) {
     const filteredMessages = [];
-    const respondedMessages = await this.db.getRespondedMessages(1000);
+    const respondedMessages = (await this.db.getRespondedMessages(1000)) || [];
     const respondedIds = new Set(respondedMessages.map(m => m.message_id));
     
     logger.info(`Filtering ${messages.length} messages from ${channelName}`);
@@ -262,10 +317,20 @@ class SlackService {
         continue;
       }
 
-      // Skip bot messages
-      if (message.bot_id || message.subtype === 'bot_message') {
-        logger.debug(`Skipping message ${message.ts} - bot message`);
+      // Get user info
+      const userInfo = await this._getUserInfo(message.user);
+      
+      // Skip bot messages except MCP messages (which appear as bot messages but should be processed)
+      // MCP messages have bot_id B097ML1T6DQ and app_id A097GBJDNAF
+      const isMcpMessage = message.bot_id === 'B097ML1T6DQ' || message.app_id === 'A097GBJDNAF';
+      
+      if ((userInfo.is_bot || message.bot_id || message.subtype === 'bot_message') && !isMcpMessage) {
+        logger.debug(`Skipping message ${message.ts} - bot message (not MCP)`);
         continue;
+      }
+      
+      if (isMcpMessage) {
+        logger.debug(`Processing MCP message ${message.ts} from user ${message.user}`);
       }
 
       // Apply trigger word filtering
@@ -283,22 +348,24 @@ class SlackService {
       }
 
       // Process file attachments if any
-      let filePaths = [];
+      let processedFiles = [];
       if (message.files && message.files.length > 0) {
-        filePaths = await this._processFileAttachments(message.files, channelName);
+        const channelInfo = await this._getChannelInfo(channelName);
+        processedFiles = await this.fileHandler.processAttachments(message, channelInfo.id);
       }
 
       filteredMessages.push({
         id: message.ts,
         text: message.text || '',
-        user: message.user,
+        user: userInfo,
         channel: message.channel || channelName,
         channelName: channelName,
         ts: message.ts,
         thread_ts: message.thread_ts,
         isThreadReply: !!message.thread_ts,
         hasAttachments: message.files && message.files.length > 0,
-        filePaths: filePaths
+        filePaths: processedFiles.map(f => f.filePath).filter(p => p),
+        files: processedFiles
       });
     }
 
@@ -325,25 +392,35 @@ class SlackService {
     return false;
   }
 
-  async _processFileAttachments(files, channelName) {
-    const filePaths = [];
-    
-    for (const file of files) {
-      try {
-        const savedPath = await this.fileHandler.downloadFile(file, channelName);
-        if (savedPath) {
-          filePaths.push({
-            path: savedPath,
-            name: file.name,
-            type: file.mimetype || 'unknown'
-          });
-        }
-      } catch (error) {
-        logger.error(`Failed to process file ${file.name}:`, error);
-      }
-    }
+  async postMessageWithFile(channel, message, file) {
+    // 🚨 ENFORCEMENT: Block this during processing
+    this._enforceNoSlackAPI('files.uploadV2');
 
-    return filePaths;
+    try {
+        const channelInfo = await this._getChannelInfo(channel);
+        if (!channelInfo) {
+            throw new Error(`Channel ${channel} not found`);
+        }
+
+        const result = await this.client.files.uploadV2({
+            channel_id: channelInfo.id,
+            initial_comment: message,
+            file: file.path,
+            filename: file.name,
+        });
+
+        if (!result.ok) {
+            throw new Error(result.error || 'Failed to post message with file');
+        }
+
+        return {
+            success: true,
+            ts: result.file.ts
+        };
+    } catch (error) {
+        logger.error('Error posting message with file:', error);
+        throw error;
+    }
   }
 
   async postResponse(message, responseText) {

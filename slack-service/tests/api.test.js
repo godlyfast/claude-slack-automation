@@ -10,11 +10,20 @@ describe('API', () => {
   let mockSlackService;
 
   beforeEach(() => {
+    // Set a dummy API key for testing
+    process.env.OPENAI_API_KEY = 'test-key';
+
     mockSlackService = {
       getUnrespondedMessages: jest.fn(),
       postResponse: jest.fn(),
       db: {
         getRespondedMessages: jest.fn()
+      },
+      config: {
+        llm: {
+          provider: 'openai',
+          model: 'gpt-3.5-turbo'
+        }
       }
     };
 

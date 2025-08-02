@@ -136,7 +136,7 @@ class FileHandler {
     
     // Try download with retry logic for transient failures
     let lastError;
-    for (let attempt = 1; attempt <= 1; attempt++) {  // Reduced to 1 attempt to prevent API timeouts
+    for (let attempt = 1; attempt <= 3; attempt++) {  // Reduced to 1 attempt to prevent API timeouts
       try {
         const content = await this.httpDownload(downloadUrl);
         logger.debug(`Successfully downloaded ${file.name} (${content.length} bytes)`);
@@ -299,7 +299,7 @@ class FileHandler {
         reject(new Error(`Network error: ${error.message}`));
       });
       
-      request.setTimeout(2000, () => {  // 2 second timeout to prevent API timeouts
+      request.setTimeout(30000, () => {  // 2 second timeout to prevent API timeouts
         request.destroy();
         reject(new Error('Download timeout - file access may require additional permissions'));
       });

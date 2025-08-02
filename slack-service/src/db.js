@@ -312,7 +312,7 @@ class Database {
           message.channel,
           message.channelName,
           message.thread_ts,
-          message.user,
+          message.user.id || message.user,  // Handle both object and string formats
           message.text,
           message.hasAttachments ? 1 : 0,
           filePaths

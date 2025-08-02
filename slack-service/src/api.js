@@ -1,6 +1,6 @@
 const express = require('express');
 const SlackService = require('./slack-service');
-const ClaudeService = require('./claude-service');
+const LLMProcessor = require('./llm-processor');
 const logger = require('./logger');
 const { withTimeout, handleErrorResponse } = require('./utils');
 const globalRateLimiter = require('./global-rate-limiter').getInstance();
@@ -9,7 +9,7 @@ class API {
   constructor(slackService) {
     this.app = express();
     this.slackService = slackService;
-    this.claudeService = new ClaudeService(slackService.config);
+    this.llmProcessor = new LLMProcessor(slackService.config);
     this.setupMiddleware();
     this.setupRoutes();
   }
@@ -84,6 +84,25 @@ class API {
       } catch (error) {
         handleErrorResponse(res, error, 'posting response');
       }
+    });
+
+    this.app.post('/messages/post', async (req, res) => {
+        try {
+            const { channel, message, file } = req.body;
+            if (!channel || !message) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Missing channel or message'
+                });
+            }
+            const result = await this.slackService.postMessageWithFile(channel, message, file);
+            res.json({
+                success: true,
+                ts: result.ts
+            });
+        } catch (error) {
+            handleErrorResponse(res, error, 'posting message with file');
+        }
     });
 
     this.app.get('/messages/responded', async (req, res) => {
@@ -162,10 +181,10 @@ class API {
       });
     });
 
-    // Process messages with Claude
+    // Process messages with LLM
     // 🚨 CRITICAL: This endpoint MUST fetch channel history and queue responses
-    // Claude should NEVER directly interact with Slack API
-    this.app.post('/messages/process-with-claude', async (req, res) => {
+    // The LLM should NEVER directly interact with Slack API
+    this.app.post('/messages/process-with-llm', async (req, res) => {
       try {
         const { messages } = req.body;
         
@@ -187,7 +206,7 @@ class API {
 
           // Pre-fetch channel histories FROM DATABASE (not Slack API)
           // This is critical for reducing API usage
-          const channelHistories = await this.claudeService.prefetchChannelHistories(
+          const channelHistories = await this.llmProcessor.prefetchChannelHistories(
             uniqueChannels,
             (channel, limit) => this.slackService.db.getChannelHistoryFromDB(channel, limit)
           );
@@ -197,14 +216,14 @@ class API {
         for (const message of messages) {
           try {
             // Mark message as processing
-            await this.slackService.db.updateMessageStatus(message.message_id, 'processing');
+            await this.slackService.db.updateMessageStatus(message.id, 'processing');
             
             // Get channel history for this message
             const channelHistory = channelHistories[message.channelName] || [];
             
             // Filter file paths by channel
             if (message.filePaths && message.filePaths.length > 0) {
-              message.filePaths = this.claudeService.filterFilePathsByChannel(
+              message.filePaths = this.llmProcessor.filterFilePathsByChannel(
                 message.filePaths,
                 message.channel
               );
@@ -213,7 +232,7 @@ class API {
             // Add channel file paths if available
             const channelFiles = channelHistories[`${message.channelName}_files`] || [];
             if (channelFiles.length > 0) {
-              const filteredChannelFiles = this.claudeService.filterFilePathsByChannel(
+              const filteredChannelFiles = this.llmProcessor.filterFilePathsByChannel(
                 channelFiles,
                 message.channel
               );
@@ -224,11 +243,11 @@ class API {
               );
             }
 
-            // Process message with Claude
-            const response = await this.claudeService.processMessage(message, channelHistory);
+            // Process message with LLM
+            const response = await this.llmProcessor.processMessage(message, channelHistory);
             
             // 🚨 CRITICAL: Queue the response - NEVER send directly to Slack
-            // Claude must remain isolated from Slack API
+            // The LLM must remain isolated from Slack API
             await this.slackService.db.queueResponse(
               message.message_id,  // Use Slack message ID, not DB row ID
               message.channel_id || message.channel,
@@ -249,7 +268,7 @@ class API {
             logger.error(`Failed to process message ${message.id}:`, error);
             
             // Update message status to error
-            await this.slackService.db.updateMessageStatus(message.message_id, 'error', error.message);
+            await this.slackService.db.updateMessageStatus(message.id, 'error', error.message);
             
             results.push({
               messageId: message.id,
@@ -272,7 +291,7 @@ class API {
       } catch (error) {
         // Ensure processing mode is disabled on error
         this.slackService.setProcessingMode(false);
-        handleErrorResponse(res, error, 'processing messages with Claude');
+        handleErrorResponse(res, error, 'processing messages with LLM');
       }
     });
 
@@ -293,6 +312,42 @@ class API {
         });
       } catch (error) {
         handleErrorResponse(res, error, 'getting channel history');
+      }
+    });
+
+    this.app.get('/channel-id/:channel', async (req, res) => {
+      try {
+        const { channel } = req.params;
+        const channelInfo = await this.slackService._getChannelInfo(channel);
+        if (channelInfo) {
+          res.json({
+            success: true,
+            channelId: channelInfo.id,
+          });
+        } else {
+          res.status(404).json({
+            success: false,
+            error: 'Channel not found',
+          });
+        }
+      } catch (error) {
+        handleErrorResponse(res, error, 'getting channel ID');
+      }
+    });
+
+    this.app.post('/messages/delete', async (req, res) => {
+      try {
+        const { channel, ts } = req.body;
+        if (!channel || !ts) {
+          return res.status(400).json({
+            success: false,
+            error: 'Missing channel or ts',
+          });
+        }
+        await this.slackService.client.chat.delete({ channel, ts });
+        res.json({ success: true });
+      } catch (error) {
+        handleErrorResponse(res, error, 'deleting message');
       }
     });
 
@@ -422,10 +477,10 @@ class API {
                   filePaths: message.file_paths ? JSON.parse(message.file_paths) : []
                 };
                 
-                // Process with Claude (this is the only external call)
-                const response = await this.claudeService.processMessage(messageObj, []);
-                
-                // Queue the response (parallel DB operations)
+        // Process with LLM (this is the only external call)
+        const response = await this.llmProcessor.processMessage(messageObj, []);
+        
+        // Queue the response (parallel DB operations)
                 await Promise.all([
                   this.slackService.db.queueResponse(
                     message.message_id,

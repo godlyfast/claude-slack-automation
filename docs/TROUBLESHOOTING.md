@@ -2,17 +2,28 @@
 
 ## Common Issues and Solutions
 
-### 🤖 Claude Code Issues
+### 🤖 LLM Integration Issues
 
-#### Claude command not found
+#### LLM not responding / "Error generating response"
+- Check LLM provider configuration in config.env
+- Verify API key is set for your provider:
+  - Google: `GOOGLE_API_KEY`
+  - Anthropic: `ANTHROPIC_API_KEY`
+  - OpenAI: `OPENAI_API_KEY`
+- Check logs for specific errors: `tail -f logs/slack-service.log | grep -i error`
+- For Google: Ensure `@google/generative-ai` npm package is installed
+
+#### Claude command not found (if using claude-code provider)
+- Set `LLM_PROVIDER="claude-code"` in config.env
 - Ensure Claude Code is installed: `which claude`
 - Check that Claude Code is in your PATH
 - Try running with full path: `/usr/local/bin/claude`
+- Test CLI directly: `echo "Hello" | claude`
 
-#### Claude timeout errors
+#### LLM timeout errors
 - Normal for complex queries - bot posts helpful message
-- Check Claude Code is responsive: `echo "test" | claude`
 - Increase timeout in config.env: `CLAUDE_TIMEOUT=900`
+- Check network connectivity to LLM provider
 
 ### 🔴 Service Not Starting
 
@@ -38,6 +49,12 @@
 #### Messages appear as bot messages
 - Normal for MCP integration - service handles this correctly
 - Bot filters its own messages automatically
+
+#### MCP messages not being processed
+- Verify MCP bot_id (B097ML1T6DQ) is allowed in slack-service.js
+- Check that user info can be fetched for the MCP user
+- Look for "Processing MCP message" in logs
+- Ensure trigger keywords are present in the MCP message
 
 #### Rate limit errors
 - Normal behavior - wait 60 seconds between API calls
@@ -74,6 +91,16 @@ pkill -f sqlite3
 # Check database integrity
 sqlite3 slack-service/data/slack-bot.db "PRAGMA integrity_check;"
 ```
+
+#### "invalid_thread_ts" errors
+- Check response queue is using message_id not database row ID
+- Verify in api.js: `message.message_id` not `message.id` for thread_ts
+- Clear error responses: `sqlite3 slack-service/data/slack-bot.db "DELETE FROM response_queue WHERE error_message LIKE '%invalid_thread_ts%';"`
+
+#### User ID stored as "[object Object]"
+- Verify db.js extracts user.id from user object
+- Check message queue entries: `sqlite3 slack-service/data/slack-bot.db "SELECT * FROM message_queue ORDER BY fetched_at DESC LIMIT 5;"`
+- Fix: Update db.js to use `message.user.id || message.user`
 
 #### Database growing too large
 - Normal - bot preserves all messages

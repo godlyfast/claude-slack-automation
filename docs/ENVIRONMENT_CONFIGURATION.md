@@ -80,12 +80,28 @@ All configuration is stored in `config.env` in the project root. This file is so
 | `CHANNEL_PRIORITY_MODE` | Prioritize active channels | true | No |
 | `API_CALLS_PER_MINUTE` | Slack API calls per minute | 0.5 | No |
 
+### LLM Configuration
+
+| Variable | Description | Default | Required |
+|----------|-------------|---------|----------|
+| `LLM_PROVIDER` | LLM provider: "google", "anthropic", "openai", or "claude-code" | anthropic | No |
+| `ANTHROPIC_API_KEY` | Anthropic API key (for Claude) | - | If provider=anthropic |
+| `ANTHROPIC_MODEL` | Anthropic model name | claude-3-sonnet-20240229 | No |
+| `GOOGLE_API_KEY` | Google API key (for Gemini) | - | If provider=google |
+| `GOOGLE_MODEL` | Google model name | gemini-2.5-pro | No |
+| `OPENAI_API_KEY` | OpenAI API key | - | If provider=openai |
+| `OPENAI_MODEL` | OpenAI model name | gpt-4-turbo-preview | No |
+| `CHANNEL_HISTORY_LIMIT` | Max messages to fetch for context | 200 | No |
+| `CHANNEL_HISTORY_DISPLAY` | Max messages to include in prompt | 100 | No |
+
+Note: When using `claude-code` provider, no API key is required, but Claude Code CLI must be installed on the system.
+
 ### Other Settings
 
 | Variable | Description | Default | Required |
 |----------|-------------|---------|----------|
 | `DEBUG_MODE` | Enable debug logging | true | No |
-| `RESPONSE_STYLE` | Claude response style | helpful,conversational,concise | No |
+| `RESPONSE_STYLE` | Response style for LLM | helpful,conversational,concise | No |
 | `SLACK_WORKSPACE` | Slack workspace (if multiple) | - | No |
 | `RESPOND_IN_THREADS` | Respond in threads vs main channel | true | No |
 
@@ -107,9 +123,20 @@ SERVICE_URL="http://localhost:3030"
 LOG_DIR="logs"
 DATA_DIR="slack-service/data"
 
+# LLM Configuration
+LLM_PROVIDER="google"              # Use Google Gemini
+GOOGLE_API_KEY="your-google-api-key"
+GOOGLE_MODEL="gemini-2.5-pro"
+# Or for Claude:
+# LLM_PROVIDER="anthropic"
+# ANTHROPIC_API_KEY="your-anthropic-key"
+# ANTHROPIC_MODEL="claude-3-sonnet-20240229"
+# Or for Claude Code CLI (no API key needed):
+# LLM_PROVIDER="claude-code"
+
 # Timing Configuration
 BOT_CHECK_INTERVAL=60      # Check every minute
-CLAUDE_TIMEOUT=30          # 30 second timeout for Claude
+CLAUDE_TIMEOUT=30          # 30 second timeout for LLM
 CACHE_TTL=90              # Cache messages for 90 seconds
 
 # Loop Prevention

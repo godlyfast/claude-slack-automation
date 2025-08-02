@@ -128,18 +128,22 @@ See docs/ENVIRONMENT_CONFIGURATION.md for complete list of all configuration opt
 
 ## Key Implementation Details
 
-1. **Node.js Service**: Handles all Slack API operations to minimize Claude usage
+1. **Node.js Service**: Handles all Slack API operations to minimize LLM usage
 2. **SQLite Database**: Tracks responded messages reliably
 3. **REST API**: Clean interface between shell script and Node.js service
-   - NEW endpoint: `POST /messages/process-with-claude` - Processes multiple messages in one request
-   - Handles channel history pre-fetching, file filtering, and Claude execution
-4. **Claude Service Module**: New centralized module for Claude interactions
-   - `buildClaudeInstruction()`: Constructs prompts with channel/thread context
-   - `executeClaude()`: Manages CLI execution with proper timeout handling
+   - Endpoint: `POST /messages/process-with-llm` - Processes multiple messages in one request
+   - Handles channel history pre-fetching, file filtering, and LLM execution
+4. **LLM Processor Module**: Centralized module for LLM interactions (supports multiple providers)
+   - Supports Claude (Anthropic), Google Gemini, OpenAI, and Claude Code CLI
+   - Configurable via `LLM_PROVIDER` and related environment variables
+   - `processMessage()`: Main entry point for message processing
    - `prefetchChannelHistories()`: Optimizes API calls by batching history fetches
-5. **Claude Focus**: Claude only generates response text - no Slack tool usage
+   - Claude Code CLI provider (`claude-code`) maintains backward compatibility
+5. **LLM Focus**: The LLM only generates response text - no Slack tool usage
 6. **Private Channels**: Supports both public and private channels
-7. **MCP Messages**: Handles messages sent via Claude's MCP Slack integration
+7. **MCP Messages**: Specially handles messages sent via Claude's MCP Slack integration
+   - MCP messages appear as bot messages (bot_id: B097ML1T6DQ, app_id: A097GBJDNAF)
+   - These are processed despite being bot messages to support Claude Code integration
 8. **Error Handling**: Comprehensive logging in both Node.js and shell script
 9. **Unit Tests**: Comprehensive test coverage with 70+ tests across all modules
 10. **Daemon Architecture**: Uses daemon process for continuous message processing
@@ -147,14 +151,15 @@ See docs/ENVIRONMENT_CONFIGURATION.md for complete list of all configuration opt
     - Handles fetch, process, and send operations through queue_operations.sh
 11. **Priority System**: Send operations always take priority over fetching
 12. **Lock Mechanism**: Prevents multiple bot instances from running simultaneously
-13. **Timeout Handling**: Posts helpful message when Claude times out with instructions
+13. **Timeout Handling**: Posts helpful message when LLM times out with instructions
 14. **Thread Replies**: Bot ALWAYS sends responses as thread replies (using thread_ts) - NEVER as regular channel messages
 15. **API Lock Mechanism**: Fetch and send operations use a global lock to prevent concurrent Slack API requests
 16. **Enforcement System**: Runtime checks prevent ANY Slack API calls during message processing:
     - `_enforceNoSlackAPI()` method blocks all API calls when in processing mode
-    - `/messages/process-with-claude` and `/queue/process` enable processing mode
+    - `/messages/process-with-llm` and `/queue/process` enable processing mode
     - Channel history MUST come from database during processing, NEVER from Slack API
     - Test with `./test_enforcement.js` to verify enforcement is working
+17. **User Info Caching**: User information is cached for 1 hour to reduce API calls
 
 ## Troubleshooting
 
@@ -163,9 +168,23 @@ Common issues:
 - **No messages found**: Verify bot has access to channels and correct scopes
 - **Private channel not visible**: Ensure user is member of the private channel
 - **Messages appear as bot messages**: Normal for MCP - service handles this correctly
-- **Database errors**: Check write permissions in slack-service/data/ directory
+- **MCP messages not being processed**: 
+  - Ensure bot_id B097ML1T6DQ is allowed in slack-service.js
+  - Check that user info can be fetched for the MCP user
+- **Database errors**: 
+  - Check write permissions in slack-service/data/ directory
+  - Verify user_id is properly extracted from user objects
+- **"Error generating response" messages**:
+  - Check LLM service configuration (provider, API key, model)
+  - Review logs for specific LLM errors
+  - Ensure Google Generative AI SDK is properly installed if using Google
+- **"invalid_thread_ts" errors**:
+  - Verify message_id (not database ID) is used for thread_ts
+  - Check that response queue uses correct message timestamps
 - **Port already in use**: Change SERVICE_PORT in config.env or stop existing service (port 3030)
-- **Claude command not found**: Ensure Claude Code is installed and in PATH
+- **LLM timeouts**: 
+  - Increase CLAUDE_TIMEOUT in config.env
+  - Check network connectivity to LLM provider
 - **Rate limits**: Service includes caching and rate limiting protection
 - **LaunchAgent not running**: Check Console.app for errors, ensure Terminal has Full Disk Access
 - **Permissions**: All scripts need execute permission (`chmod +x *.sh`)

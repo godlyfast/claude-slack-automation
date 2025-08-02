@@ -6,16 +6,20 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
-    "test": "NODE_ENV=test jest",
+    "test": "NODE_ENV=test jest --testPathIgnorePatterns=tests/integration",
+    "test:integration": "NODE_ENV=test jest --testPathPattern=tests/integration",
     "test:watch": "NODE_ENV=test jest --watch",
     "test:coverage": "NODE_ENV=test jest --coverage"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.57.0",
+    "@google/generative-ai": "^0.24.1",
     "@slack/web-api": "^7.7.0",
-    "express": "^4.21.2",
     "dotenv": "^16.5.0",
-    "winston": "^3.17.0",
-    "sqlite3": "^5.1.7"
+    "express": "^4.21.2",
+    "openai": "^5.11.0",
+    "sqlite3": "^5.1.7",
+    "winston": "^3.17.0"
   },
   "devDependencies": {
     "jest": "^29.7.0",

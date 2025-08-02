@@ -164,12 +164,12 @@ process_messages() {
     
     log "$PROCESS_LOG" "Found $MESSAGE_COUNT pending messages to process"
     
-    # 🚨 CRITICAL: MUST use process-with-claude endpoint for channel history
+    # 🚨 CRITICAL: MUST use process-with-llm endpoint for channel history
     # NEVER use /queue/process - it lacks context and violates architecture
     RESULT=$(curl -s -X POST \
         -H "Content-Type: application/json" \
         -d "{\"messages\": $MESSAGES_ARRAY}" \
-        "${SERVICE_URL}/messages/process-with-claude" 2>&1)
+        "${SERVICE_URL}/messages/process-with-llm" 2>&1)
     
     EXIT_CODE=$?
     

@@ -1,18 +1,18 @@
 # Claude Slack Bot Automation
 
-This automation uses a Node.js service to monitor Slack channels and threads, while Claude Code generates intelligent responses. The hybrid architecture reduces Claude API usage by 90%+ by handling all Slack operations in Node.js.
+This automation uses a Node.js service to monitor Slack channels and threads, while an LLM (Claude, Google Gemini, or OpenAI) generates intelligent responses. The hybrid architecture reduces API usage by 90%+ by handling all Slack operations in Node.js. Supports messages sent via Claude's MCP Slack integration.
 
 📘 **[Інструкція українською мовою](docs/UKRAINIAN_INSTRUCTIONS.md)** | [English Documentation](#)
 
 ## 🚀 Architecture Overview
 
 - **Node.js Service**: Handles all Slack API operations, message filtering, thread monitoring, and response tracking
-- **Claude Service**: Integrated Node.js module that manages Claude interactions, instruction building, and timeout handling
-- **Claude Code**: Only generates responses to messages (90%+ reduction in API usage)  
+- **LLM Service**: Flexible integration with multiple providers (Anthropic Claude, Google Gemini, OpenAI)
 - **SQLite Database**: Ensures no duplicate responses and tracks thread conversations
 - **Thread Support**: Full conversation context across channel messages and thread replies
+- **MCP Support**: Processes messages sent via Claude's MCP Slack integration
 - **Loop Prevention**: 8-layer anti-loop system prevents infinite responses
-- **REST API**: Clean interface between components with new `/messages/process-with-claude` endpoint
+- **REST API**: Clean interface between components with `/messages/process-with-llm` endpoint
 - **Daemon Architecture**: Uses daemon processes instead of cron for continuous operation
 - **Priority System**: Send operations run every 30 seconds for quick response delivery
 
@@ -22,11 +22,13 @@ This automation uses a Node.js service to monitor Slack channels and threads, wh
    - Required for the Slack service
    - Check with: `node --version` and `npm --version`
 
-2. **Claude Code** must be installed on your system
-   - Visit https://anthropic.com for installation instructions
-   - Ensure `claude` command is available in your PATH
+2. **LLM Provider**: Choose one of:
+   - **Google Gemini**: API key from Google AI Studio
+   - **Anthropic Claude**: API key from Anthropic
+   - **OpenAI**: API key from OpenAI
+   - **Claude Code CLI**: Install from claude.ai/code (no API key needed)
 
-3. **Slack User Token** (automatically extracted from Claude MCP config)
+3. **Slack User Token**
    - The setup will use your existing Claude Slack configuration
    - **MUST use user tokens (xoxp)** - bot tokens cannot access private channels
    - User tokens provide full access to channels you're a member of
@@ -100,6 +102,9 @@ nano config.env
 ```
 
 Key settings:
+- `LLM_PROVIDER`: The LLM provider to use (e.g., `anthropic`, `openai`, `google`).
+- `LLM_API_KEY`: Your API key for the chosen LLM provider.
+- `LLM_MODEL`: The model to use for generating responses (e.g., `claude-2.1`, `gpt-4`, `gemini-pro`).
 - `SLACK_CHANNELS`: Channels to monitor (e.g., "#ai-test,#general")
 - `TRIGGER_KEYWORDS`: Keywords that trigger responses (e.g., "AI,ШІ")
 - `RESPONSE_MODE`: "mentions" or "all"
@@ -260,8 +265,16 @@ Edit `config.env` to customize bot behavior:
 - **MAX_THREAD_RESPONSES**: Max responses per thread (default: 10)
 - **USER_RATE_LIMIT**: Max responses per user per hour (default: 5)
 
-### Service Configuration (slack-service/.env)
-- **SLACK_BOT_TOKEN**: Your Slack bot token
+### LLM Configuration
+- **LLM_PROVIDER**: Choose "google", "anthropic", "openai", or "claude-code"
+- **GOOGLE_API_KEY**: For Google Gemini (if using Google)
+- **ANTHROPIC_API_KEY**: For Claude (if using Anthropic)
+- **OPENAI_API_KEY**: For GPT models (if using OpenAI)
+- **[PROVIDER]_MODEL**: Model name for your chosen provider
+- Note: claude-code provider uses the CLI and requires no API key
+
+### Service Configuration
+- **SLACK_BOT_TOKEN**: Your Slack user token (xoxp-...)
 - **PORT**: API server port (default: 3030)
 - **LOG_LEVEL**: Logging verbosity (info, debug, error)
 
@@ -288,10 +301,9 @@ Edit `config.env` to customize bot behavior:
 
 ### Bot Script Issues
 
-1. **Claude Code not found**
-   - Ensure Claude Code is installed
-   - Check that `claude` command works in terminal
-   - May need to add to PATH in the script
+1. **LLM API Key not working**
+   - Ensure the `LLM_API_KEY` in `config.env` is correct.
+   - Check that the API key has the necessary permissions.
 
 2. **No responses in Slack**
    - Verify Node.js service is running: `curl ${SERVICE_URL}/health`
@@ -341,16 +353,16 @@ Two integration tests are available:
 
 ## Customization
 
-To modify Claude's behavior:
-- Edit the instruction building logic in `slack-service/src/claude-service.js`
-- Look for the `buildClaudeInstruction` method
+To modify the LLM's behavior:
+- Edit the prompt building logic in `slack-service/src/llm-processor.js`
+- Look for the `buildPrompt` method
 - Adjust the prompting to change response style
 - Add specific instructions for your use case
 
 The architecture now uses a cleaner separation:
 - **Queue Operations** (`queue_operations.sh`): Unified script for all queue operations
-- **Claude Service** (`slack-service/src/claude-service.js`): Handles all Claude interaction logic
-- **API** (`slack-service/src/api.js`): Provides REST endpoints including `/messages/process-with-claude`
+- **LLM Processor** (`slack-service/src/llm-processor.js`): Handles all LLM interaction logic
+- **API** (`slack-service/src/api.js`): Provides REST endpoints including `/messages/process-with-llm`
 
 ## Support
 

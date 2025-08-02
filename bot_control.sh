@@ -74,7 +74,7 @@ start_node_service() {
     fi
     
     log_info "Starting Node.js service on port $SERVICE_PORT..."
-    npm start > ../logs/slack-service.log 2>&1 &
+    npm start 2>&1 | tee ../logs/slack-service.log &
     
     cd ..
     

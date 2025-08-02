@@ -3,9 +3,10 @@ const path = require('path');
 const logger = require('./logger');
 
 class GlobalRateLimiter {
-  constructor() {
+  constructor(bucketSize = 5, refillRate = 1 / 65) {
     this.stateFile = path.join(__dirname, '..', 'data', 'rate_limit_state.json');
-    this.minTimeBetweenCalls = 65000; // 65 seconds (small buffer above 60s limit)
+    this.bucketSize = bucketSize; // Max 5 calls in a burst
+    this.refillRate = refillRate; // Refill 1 token every 65 seconds
     this.ensureDataDir();
     this.loadState();
   }
@@ -22,9 +23,16 @@ class GlobalRateLimiter {
       if (fs.existsSync(this.stateFile)) {
         const data = fs.readFileSync(this.stateFile, 'utf8');
         this.state = JSON.parse(data);
+        if (this.state.tokens === undefined) {
+          this.state.tokens = this.bucketSize;
+        }
+        if (this.state.lastRefill === undefined) {
+          this.state.lastRefill = Date.now();
+        }
       } else {
         this.state = {
-          lastApiCall: 0,
+          tokens: this.bucketSize,
+          lastRefill: Date.now(),
           totalCalls: 0,
           blockedCalls: 0
         };
@@ -33,7 +41,8 @@ class GlobalRateLimiter {
     } catch (error) {
       logger.error('Failed to load rate limit state:', error);
       this.state = {
-        lastApiCall: 0,
+        tokens: this.bucketSize,
+        lastRefill: Date.now(),
         totalCalls: 0,
         blockedCalls: 0
       };
@@ -48,22 +57,22 @@ class GlobalRateLimiter {
     }
   }
 
-  canMakeApiCall() {
+  refillTokens() {
     const now = Date.now();
-    const timeSinceLastCall = now - this.state.lastApiCall;
-    
-    if (timeSinceLastCall >= this.minTimeBetweenCalls) {
-      return {
-        allowed: true,
-        waitTime: 0
-      };
+    const timeSinceLastRefill = now - this.state.lastRefill;
+    const tokensToAdd = timeSinceLastRefill * this.refillRate / 1000;
+    this.state.tokens = Math.min(this.bucketSize, this.state.tokens + tokensToAdd);
+    this.state.lastRefill = now;
+  }
+
+  canMakeApiCall() {
+    this.refillTokens();
+    if (this.state.tokens >= 1) {
+      return { allowed: true, waitTime: 0 };
+    } else {
+      const timeToNextToken = (1 - this.state.tokens) / this.refillRate * 1000;
+      return { allowed: false, waitTime: timeToNextToken };
     }
-    
-    const waitTime = this.minTimeBetweenCalls - timeSinceLastCall;
-    return {
-      allowed: false,
-      waitTime: waitTime
-    };
   }
 
   async waitForNextSlot() {
@@ -78,14 +87,14 @@ class GlobalRateLimiter {
   }
 
   recordApiCall(endpoint) {
-    const now = Date.now();
-    this.state.lastApiCall = now;
-    this.state.totalCalls++;
-    
-    logger.info(`Global rate limiter: API call recorded for ${endpoint} at ${new Date(now).toISOString()}`);
-    logger.info(`Next API call allowed at: ${new Date(now + this.minTimeBetweenCalls).toISOString()}`);
-    
-    this.saveState();
+    if (this.state.tokens >= 1) {
+      this.state.tokens -= 1;
+      this.state.totalCalls++;
+      logger.info(`Global rate limiter: API call recorded for ${endpoint}. Tokens left: ${this.state.tokens.toFixed(2)}`);
+      this.saveState();
+      return true;
+    }
+    return false;
   }
 
   recordBlockedCall(endpoint) {
@@ -95,24 +104,24 @@ class GlobalRateLimiter {
   }
 
   getStats() {
-    const now = Date.now();
-    const timeSinceLastCall = now - this.state.lastApiCall;
-    const nextCallTime = Math.max(0, this.minTimeBetweenCalls - timeSinceLastCall);
-    
+    this.refillTokens();
+    const check = this.canMakeApiCall();
     return {
       totalCalls: this.state.totalCalls,
       blockedCalls: this.state.blockedCalls,
-      lastApiCall: this.state.lastApiCall ? new Date(this.state.lastApiCall).toISOString() : 'Never',
-      nextCallAllowedIn: Math.ceil(nextCallTime / 1000),
-      canCallNow: timeSinceLastCall >= this.minTimeBetweenCalls,
-      enforcedLimit: '1 call per 65 seconds',
-      description: 'Global rate limiter with 5-second buffer above Slack\'s 60-second limit'
+      tokens: this.state.tokens.toFixed(2),
+      bucketSize: this.bucketSize,
+      refillRate: `${this.refillRate * 1000} tokens/sec`,
+      nextCallAllowedIn: check.allowed ? 0 : Math.ceil(check.waitTime / 1000),
+      canCallNow: check.allowed,
+      description: 'Token bucket rate limiter'
     };
   }
 
   reset() {
     this.state = {
-      lastApiCall: 0,
+      tokens: this.bucketSize,
+      lastRefill: Date.now(),
       totalCalls: 0,
       blockedCalls: 0
     };
