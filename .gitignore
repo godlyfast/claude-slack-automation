@@ -58,6 +58,7 @@ claude_slack_bot.lock
 Thumbs.db
 .claude/
 .kilocode/
+.roo/
 
 # OS files
 .DS_Store
