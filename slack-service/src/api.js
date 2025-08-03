@@ -626,6 +626,28 @@ class API {
     });
   }
 
+  async sendResponses(responses) {
+    const results = await Promise.all(
+      responses.map(async (response) => {
+        try {
+          const message = {
+            channel: response.channel_id,
+            ts: response.message_id,
+            thread_ts: response.thread_ts,
+          };
+          await this.slackService.postResponse(message, response.response_text);
+          await this.slackService.db.updateResponseStatus(response.id, 'sent');
+          return { success: true, id: response.id };
+        } catch (error) {
+          logger.error(`Failed to send response ${response.id}:`, error);
+          await this.slackService.db.updateResponseStatus(response.id, 'error', error.message);
+          return { success: false, id: response.id, error: error.message };
+        }
+      })
+    );
+    return results;
+  }
+
   start(port = process.env.SERVICE_PORT || process.env.PORT || 3030) {
     this.server = this.app.listen(port, () => {
       logger.info(`API server listening on port ${port}`);

@@ -2,6 +2,7 @@
 require('dotenv').config({ path: require('path').join(__dirname, '../../config.env') });
 const SlackService = require('./slack-service');
 const API = require('./api');
+const Orchestrator = require('./orchestrator');
 const logger = require('./logger');
 
 function loadConfig() {
@@ -53,6 +54,9 @@ async function main() {
     const port = process.env.SERVICE_PORT || process.env.PORT || 3030;
     api.start(port);
 
+    const orchestrator = new Orchestrator(slackService, api);
+    orchestrator.start();
+
     // Warm up the cache on startup
     if (config.cacheEnabled) {
       setTimeout(async () => {
@@ -67,6 +71,7 @@ async function main() {
 
     process.on('SIGTERM', () => {
       logger.info('SIGTERM received, shutting down gracefully');
+      orchestrator.stop();
       api.stop();
       slackService.close();
       process.exit(0);
@@ -74,6 +79,7 @@ async function main() {
 
     process.on('SIGINT', () => {
       logger.info('SIGINT received, shutting down gracefully');
+      orchestrator.stop();
       api.stop();
       slackService.close();
       process.exit(0);

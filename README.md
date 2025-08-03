@@ -6,92 +6,61 @@ This automation uses a Node.js service to monitor Slack channels and threads, wh
 
 ## 🚀 Architecture Overview
 
-- **Node.js Service**: Handles all Slack API operations, message filtering, thread monitoring, and response tracking
-- **LLM Service**: Flexible integration with multiple providers (Anthropic Claude, Google Gemini, OpenAI)
-- **SQLite Database**: Ensures no duplicate responses and tracks thread conversations
-- **Thread Support**: Full conversation context across channel messages and thread replies
-- **MCP Support**: Processes messages sent via Claude's MCP Slack integration
-- **Loop Prevention**: 8-layer anti-loop system prevents infinite responses
-- **REST API**: Clean interface between components with `/messages/process-with-llm` endpoint
-- **Daemon Architecture**: Uses daemon processes instead of cron for continuous operation
-- **Priority System**: Send operations run every 30 seconds for quick response delivery
+- **Unified Node.js Service**: A single, containerized service that handles all Slack API operations, message filtering, thread monitoring, and response tracking.
+- **LLM Service**: Flexible integration with multiple providers (Anthropic Claude, Google Gemini, OpenAI).
+- **SQLite Database**: Ensures no duplicate responses and tracks thread conversations.
+- **Docker Support**: The entire application is containerized with Docker for easy setup and deployment.
+- **Orchestration**: A built-in orchestrator manages the fetch-process-send cycle, replacing the need for external scripts.
 
 ## Prerequisites
 
-1. **Node.js** (v14 or higher) and npm
-   - Required for the Slack service
-   - Check with: `node --version` and `npm --version`
+1. **Docker and Docker Compose**
+   - Required to build and run the application container.
+   - Visit [https://www.docker.com/get-started](https://www.docker.com/get-started) to install.
 
 2. **LLM Provider**: Choose one of:
    - **Google Gemini**: API key from Google AI Studio
    - **Anthropic Claude**: API key from Anthropic
    - **OpenAI**: API key from OpenAI
-   - **Claude Code CLI**: Install from claude.ai/code (no API key needed)
 
 3. **Slack User Token**
-   - The setup will use your existing Claude Slack configuration
-   - **MUST use user tokens (xoxp)** - bot tokens cannot access private channels
-   - User tokens provide full access to channels you're a member of
+   - **MUST use user tokens (xoxp)** - bot tokens cannot access private channels.
 
-4. **Optional: Web Automation** (CLI version only)
-   - Playwright MCP is configured for web browsing tasks
-   - Bot can navigate websites, take screenshots, extract data
-   - Example: "ШІ, check the weather on weather.com"
+## 🚀 Quick Start with Docker
 
-## 🚀 Quick Start
+1. **Configure the Bot**
+   - Create a `config.env` file in the project root (you can copy `config.env.example`).
+   - Edit `config.env` to set your `SLACK_BOT_TOKEN`, `LLM_PROVIDER`, and `LLM_API_KEY`.
 
-### 🎛️ Recommended: Use Bot Control Script
-```bash
-# Complete setup (does everything for you)
-./bot_control.sh setup
+2. **Build and Run the Container**
+   ```bash
+   docker-compose up --build
+   ```
 
-# Check status
-./bot_control.sh status
+3. **Check the Service Health**
+   ```bash
+   curl http://localhost:3030/health
+   ```
 
-# View logs
-./bot_control.sh logs
+## 📋 Manual Setup (Without Docker)
 
-# Start/stop/restart services
-./bot_control.sh start
-./bot_control.sh stop
-./bot_control.sh restart
-
-# Enable automatic daemon (optional)
-./bot_control.sh daemon start
-```
-
-### 🔧 Manual Setup Options
-
-**macOS LaunchAgent:**
-```bash
-./setup/setup_macos.sh
-launchctl list | grep claude
-```
-
-**Background Daemon:**
-```bash
-./daemon_control.sh start
-./daemon_control.sh status
-```
-
-**Interactive Wizard:**
-```bash
-./setup/quickstart.sh
-```
-
-## 📋 Setup Process
-
-### 1. Start Node.js Service
+### 1. Install Dependencies
 ```bash
 # Navigate to slack-service directory
 cd slack-service
 
-# Install dependencies and start service
+# Install dependencies
 npm install
-npm start &
+```
 
-# Verify service is running
-curl ${SERVICE_URL}/health
+### 2. Configure the Bot
+- Create a `config.env` file in the project root.
+- Edit `config.env` to set your `SLACK_BOT_TOKEN`, `LLM_PROVIDER`, and `LLM_API_KEY`.
+
+### 3. Start the Service
+```bash
+# From the slack-service directory
+npm start
 ```
 
 ### 2. Configure the Bot
@@ -126,41 +95,23 @@ Key settings:
 ```
 claude-slack-automation/
 ├── slack-service/               # Node.js Slack Service
-│   ├── src/                     # Source code  
+│   ├── src/                     # Source code
 │   │   ├── index.js            # Main server entry point
-│   │   ├── slack-service.js    # Slack API wrapper + thread monitoring
-│   │   ├── db.js               # SQLite database (deduplication + threads)
-│   │   └── loop-prevention.js  # 8-layer anti-loop system
-│   ├── tests/                  # 70+ comprehensive unit tests
-│   ├── logs/                   # Service-specific logs
-│   ├── package.json            # Dependencies (@slack/web-api, sqlite3)
-│   └── data/                   # SQLite databases and state files
-├── queue_operations.sh         # Unified queue operations (fetch/process/send)
+│   │   ├── orchestrator.js     # Manages the fetch-process-send cycle
+│   │   ├── slack-service.js    # Slack API wrapper
+│   │   ├── db.js               # SQLite database
+│   │   └── llm-processor.js    # LLM interaction logic
+│   ├── tests/                  # Unit and integration tests
+│   ├── package.json            # Dependencies
+│   └── data/                   # SQLite database
+├── Dockerfile                  # Defines the application container
+├── docker-compose.yml          # Docker Compose configuration
 ├── config.env                  # Bot configuration
-├── com.claude.slackbot.plist   # macOS LaunchAgent config
-├── test_integration_simple.sh  # Basic integration test
-├── test_full_integration.sh    # Full integration test with message posting
-├── setup/                      # Installation scripts
-│   ├── setup_macos.sh          # macOS LaunchAgent setup  
-│   └── quickstart.sh           # Interactive setup wizard
-├── daemons/                    # Daemon processes
-│   └── process_daemon.sh      # Message processing daemon
-├── scripts/                    # Helper scripts
-│   ├── common_functions.sh    # Shared utilities
-│   ├── daemon_wrapper.sh      # Daemon management wrapper
-│   └── slack_api_lock.sh      # API rate limiting lock
 ├── docs/                       # Documentation
-│   ├── ARCHITECTURE.md        # System architecture and isolation
-│   ├── DATABASE_SCHEMA.md     # Complete database structure
-│   ├── BOT_CONTROL.md         # Control script guide
-│   ├── INSTALLATION_macOS.md   # macOS installation guide
-│   ├── FILE_ATTACHMENTS.md    # File processing guide
-│   ├── PLAYWRIGHT.md          # Web automation features
-│   ├── PERFORMANCE.md         # Rate limits and caching
-│   └── ukrainian/             # Ukrainian language guides
-└── logs/                       # Bot execution logs
-    ├── queue_operations.log
-    └── queue_operations_errors.log
+│   ├── ARCHITECTURE.md        # System architecture
+│   ├── IMPROVEMENT_PLAN.md    # Details of the new architecture
+│   └── ...
+└── logs/                       # Application logs
 ```
 
 ## 💻 Usage

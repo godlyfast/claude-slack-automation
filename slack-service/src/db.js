@@ -325,12 +325,17 @@ class Database {
     });
   }
 
+  async addMessagesToQueue(messages) {
+    const promises = messages.map(message => this.queueMessage(message));
+    return Promise.all(promises);
+  }
+
   async getPendingMessages(limit = 10) {
     return new Promise((resolve, reject) => {
       this.db.all(
-        `SELECT * FROM message_queue 
-         WHERE status = 'pending' 
-         ORDER BY fetched_at ASC 
+        `SELECT * FROM message_queue
+         WHERE status = 'pending'
+         ORDER BY fetched_at ASC
          LIMIT ?`,
         [limit],
         (err, rows) => {
