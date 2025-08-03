@@ -97,6 +97,14 @@ class Database {
       this.db.run(`
         CREATE INDEX IF NOT EXISTS idx_response_status ON response_queue(status)
       `);
+
+      this.db.run(`
+        CREATE TABLE IF NOT EXISTS cache (
+          key TEXT PRIMARY KEY,
+          value TEXT,
+          expires_at DATETIME
+        )
+      `);
     });
   }
 
@@ -435,6 +443,77 @@ class Database {
         function(err) {
           if (err) reject(err);
           else resolve({ changes: this.changes });
+        }
+      );
+    });
+  }
+
+  getCache(key) {
+    return new Promise((resolve, reject) => {
+      this.db.get('SELECT * FROM cache WHERE key = ?', [key], (err, row) => {
+        if (err) reject(err);
+        else resolve(row);
+      });
+    });
+  }
+
+  setCache(key, value, ttlSeconds) {
+    return new Promise((resolve, reject) => {
+      const expires_at = ttlSeconds ? new Date(Date.now() + ttlSeconds * 1000) : null;
+      this.db.run('INSERT OR REPLACE INTO cache (key, value, expires_at) VALUES (?, ?, ?)', [key, value, expires_at], (err) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+  }
+
+  deleteCache(key) {
+    return new Promise((resolve, reject) => {
+      this.db.run('DELETE FROM cache WHERE key = ?', [key], function(err) {
+        if (err) reject(err);
+        else resolve(this.changes > 0);
+      });
+    });
+  }
+
+  clearCache() {
+    return new Promise((resolve, reject) => {
+      this.db.run('DELETE FROM cache', (err) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+  }
+
+  cleanupCache() {
+    return new Promise((resolve, reject) => {
+      this.db.run("DELETE FROM cache WHERE expires_at IS NOT NULL AND expires_at < ?", [new Date().toISOString()], function(err) {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(this.changes);
+        }
+      });
+    });
+  }
+
+  getCacheStats() {
+    return new Promise((resolve, reject) => {
+      this.db.get(
+        `SELECT
+           COUNT(*) as size,
+           SUM(LENGTH(key)) as keySize,
+           SUM(LENGTH(value)) as valueSize
+         FROM cache`,
+        (err, row) => {
+          if (err) {
+            reject(err);
+          } else {
+            resolve({
+              size: row.size || 0,
+              estimatedMemoryBytes: (row.keySize || 0) + (row.valueSize || 0)
+            });
+          }
         }
       );
     });

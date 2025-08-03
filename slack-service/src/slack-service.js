@@ -123,7 +123,7 @@ class SlackService {
 
       // Check cache first
       const cacheKey = `messages:${channelInfo.id}:${since}`;
-      const cachedMessages = cache.get(cacheKey);
+      const cachedMessages = await cache.get(cacheKey);
       
       if (cachedMessages && Array.isArray(cachedMessages)) {
         logger.info(`Using cached messages for ${channelName}`);
@@ -131,25 +131,16 @@ class SlackService {
         return cachedMessages;
       }
 
-      // Wait for rate limit slot
-      await globalRateLimiter.waitForNextSlot();
-
-      logger.info(`🔵 SLACK API CALL: conversations.history for ${channelName}`);
-      const startTime = Date.now();
-
-      // Direct API call - SDK handles rate limiting automatically
-      const result = await this.client.conversations.history({
-        channel: channelInfo.id,
-        oldest: since,
-        limit: Math.min(this.config.maxMessages, 15),  // Limit to 15 per Slack 2025 API limits
-        inclusive: false
-      });
-      
-      // Record the API call
-      globalRateLimiter.recordApiCall('conversations.history');
-
-      const duration = Date.now() - startTime;
-      logger.info(`✅ SLACK API SUCCESS: conversations.history (${duration}ms)`);
+      const result = await this._apiCallWithRetry(
+        this.client.conversations.history.bind(this.client),
+        'conversations.history',
+        {
+          channel: channelInfo.id,
+          oldest: since,
+          limit: Math.min(this.config.maxMessages, 15),
+          inclusive: false
+        }
+      );
 
       if (!result.ok) {
         throw new Error(result.error || 'Failed to fetch channel history');
@@ -158,7 +149,7 @@ class SlackService {
       const messages = result.messages || [];
       
       // Cache the messages
-      cache.set(cacheKey, messages, 30); // Cache for 30 seconds
+      await cache.set(cacheKey, messages, 30); // Cache for 30 seconds
       
       return messages;
     } catch (error) {
@@ -182,53 +173,41 @@ class SlackService {
     
     // Check cache first
     const cacheKey = `channel:${normalizedName}`;
-    const cached = cache.get(cacheKey);
+    const cached = await cache.get(cacheKey);
     if (cached) {
       return cached;
     }
 
     try {
-      // Wait for rate limit slot
-      await globalRateLimiter.waitForNextSlot();
-      
-      logger.info(`🔵 SLACK API CALL: conversations.list to find ${channelName}`);
-      const startTime = Date.now();
-
-      // Use cursor-based pagination for better performance
       let cursor;
       do {
-        const result = await this.client.conversations.list({
-          types: 'public_channel,private_channel',
-          limit: 200,  // Recommended limit per best practices
-          cursor: cursor
-        });
-        
-        // Record the API call
-        globalRateLimiter.recordApiCall('conversations.list');
+        const result = await this._apiCallWithRetry(
+          this.client.conversations.list.bind(this.client),
+          'conversations.list',
+          {
+            types: 'public_channel,private_channel',
+            limit: 200,
+            cursor: cursor
+          }
+        );
 
         if (!result.ok) {
           throw new Error(result.error || 'Failed to list channels');
         }
 
-        // Find the channel
-        const channel = result.channels.find(ch => 
-          ch.name === normalizedName || 
+        const channel = result.channels.find(ch =>
+          ch.name === normalizedName ||
           ch.name === channelName ||
           ch.id === channelName
         );
 
         if (channel) {
-          const duration = Date.now() - startTime;
-          logger.info(`✅ SLACK API SUCCESS: Found channel ${channelName} (${duration}ms)`);
-          
           const channelInfo = {
             id: channel.id,
             name: channel.name,
             is_private: channel.is_private
           };
-          
-          // Cache for 1 hour
-          cache.set(cacheKey, channelInfo, 3600);
+          await cache.set(cacheKey, channelInfo, 3600);
           return channelInfo;
         }
 
@@ -255,28 +234,17 @@ class SlackService {
 
     // Check cache first
     const cacheKey = `user:${userId}`;
-    const cached = cache.get(cacheKey);
+    const cached = await cache.get(cacheKey);
     if (cached) {
       return cached;
     }
 
     try {
-      // Wait for rate limit slot
-      await globalRateLimiter.waitForNextSlot();
-
-      logger.info(`🔵 SLACK API CALL: users.info for ${userId}`);
-      const startTime = Date.now();
-
-      // Direct API call - SDK handles rate limiting automatically
-      const result = await this.client.users.info({
-        user: userId,
-      });
-
-      // Record the API call
-      globalRateLimiter.recordApiCall('users.info');
-
-      const duration = Date.now() - startTime;
-      logger.info(`✅ SLACK API SUCCESS: users.info (${duration}ms)`);
+      const result = await this._apiCallWithRetry(
+        this.client.users.info.bind(this.client),
+        'users.info',
+        { user: userId }
+      );
 
       if (!result.ok) {
         throw new Error(result.error || 'Failed to fetch user info');
@@ -290,7 +258,7 @@ class SlackService {
       };
 
       // Cache for 1 hour
-      cache.set(cacheKey, userInfo, 3600);
+      await cache.set(cacheKey, userInfo, 3600);
       return userInfo;
     } catch (error) {
       if (error.code === ErrorCode.RateLimitedError) {
@@ -402,12 +370,16 @@ class SlackService {
             throw new Error(`Channel ${channel} not found`);
         }
 
-        const result = await this.client.files.uploadV2({
-            channel_id: channelInfo.id,
-            initial_comment: message,
-            file: file.path,
-            filename: file.name,
-        });
+        const result = await this._apiCallWithRetry(
+            this.client.files.uploadV2.bind(this.client),
+            'files.uploadV2',
+            {
+                channel_id: channelInfo.id,
+                initial_comment: message,
+                file: file.path,
+                filename: file.name,
+            }
+        );
 
         if (!result.ok) {
             throw new Error(result.error || 'Failed to post message with file');
@@ -431,24 +403,15 @@ class SlackService {
       // Record this as a response attempt
       this.loopPrevention.recordResponse(message.channel, message.thread_ts || message.ts, responseText);
 
-      // Wait for rate limit slot
-      await globalRateLimiter.waitForNextSlot();
-
-      logger.info(`🔵 SLACK API CALL: chat.postMessage`);
-      const startTime = Date.now();
-
-      // Direct API call - SDK handles rate limiting automatically
-      const result = await this.client.chat.postMessage({
-        channel: message.channel,
-        text: responseText,
-        thread_ts: message.thread_ts || message.ts  // ALWAYS post as thread reply
-      });
-      
-      // Record the API call
-      globalRateLimiter.recordApiCall('chat.postMessage');
-
-      const duration = Date.now() - startTime;
-      logger.info(`✅ SLACK API SUCCESS: chat.postMessage (${duration}ms)`);
+      const result = await this._apiCallWithRetry(
+        this.client.chat.postMessage.bind(this.client),
+        'chat.postMessage',
+        {
+          channel: message.channel,
+          text: responseText,
+          thread_ts: message.thread_ts || message.ts
+        }
+      );
 
       if (!result.ok) {
         throw new Error(result.error || 'Failed to post message');
@@ -484,17 +447,14 @@ class SlackService {
 
       logger.info(`Fetching ${limit} messages from channel ${channelName}`);
       
-      // Wait for rate limit slot
-      await globalRateLimiter.waitForNextSlot();
-      
-      // Direct API call - SDK handles rate limiting
-      const result = await this.client.conversations.history({
-        channel: channelInfo.id,
-        limit: Math.min(limit, 15) // Cap at 15 per Slack 2025 API limits
-      });
-      
-      // Record the API call
-      globalRateLimiter.recordApiCall('conversations.history');
+      const result = await this._apiCallWithRetry(
+        this.client.conversations.history.bind(this.client),
+        'conversations.history',
+        {
+          channel: channelInfo.id,
+          limit: Math.min(limit, 15)
+        }
+      );
 
       if (!result.ok) {
         throw new Error(result.error || 'Failed to fetch channel history');
@@ -514,6 +474,35 @@ class SlackService {
     }
   }
 
+  async _apiCallWithRetry(apiCall, methodName, ...args) {
+    const MAX_RETRIES = 5;
+    let attempt = 0;
+    while (attempt < MAX_RETRIES) {
+      try {
+        await globalRateLimiter.waitForNextSlot();
+        logger.info(`🔵 SLACK API CALL: ${methodName}`);
+        const startTime = Date.now();
+        const result = await apiCall(...args);
+        const duration = Date.now() - startTime;
+        logger.info(`✅ SLACK API SUCCESS: ${methodName} (${duration}ms)`);
+        globalRateLimiter.recordApiCall(methodName);
+        return result;
+      } catch (error) {
+        if (error.code === ErrorCode.RateLimitedError) {
+          const retryAfter = error.retryAfter || (2 ** attempt);
+          logger.warn(`Rate limited on ${methodName}. Retrying after ${retryAfter} seconds. Attempt ${attempt + 1}/${MAX_RETRIES}`);
+          if (attempt >= MAX_RETRIES - 1) {
+            throw new Error(`API call ${methodName} failed after ${MAX_RETRIES} retries.`);
+          }
+          await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
+          attempt++;
+        } else {
+          logger.error(`Error in API call ${methodName}:`, error);
+          throw error;
+        }
+      }
+    }
+  }
 
   // Utility methods
   getCacheStats() {

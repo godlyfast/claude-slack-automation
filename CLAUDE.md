@@ -70,15 +70,21 @@ See `docs/ARCHITECTURE.md` for complete architectural documentation and `docs/DA
 
 ## Common Commands
 
-### Central Management (Recommended)
+### Manual Testing
 ```bash
-# One command for everything
-./bot_control.sh setup    # First-time setup
-./bot_control.sh status   # Check status
-./bot_control.sh start    # Start all services
-./bot_control.sh stop     # Stop all services
-./bot_control.sh restart  # Restart all services
-./bot_control.sh logs     # View logs
+# Run bot once manually (sends pending responses first)
+./queue_operations.sh priority
+
+# Queue operations with priority
+./queue_operations.sh priority  # Send first, fetch only if nothing to send
+./queue_operations.sh send      # Send pending responses (high priority)
+./queue_operations.sh fetch     # Fetch new messages (lower priority)
+
+# Check service health
+curl ${SERVICE_URL}/health
+
+# View unresponded messages
+curl ${SERVICE_URL}/messages/unresponded | jq
 ```
 
 ### Manual Testing

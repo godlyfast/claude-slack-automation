@@ -27,8 +27,8 @@ tests/integration/
 ### Prerequisites
 1. Bot service must be running:
    ```bash
-   ./bot_control.sh status  # Check status
-   ./bot_control.sh start   # Start if needed
+   docker-compose ps # Check status
+   docker-compose up -d # Start if needed
    ```
 
 2. Clean database recommended:
@@ -165,7 +165,7 @@ Detailed Results:
 1. **Service not running**
    ```bash
    Error: Service not available at http://localhost:3030
-   Solution: ./bot_control.sh start
+   Solution: docker-compose up -d
    ```
 
 2. **Database locked**
@@ -248,7 +248,7 @@ The test suite can be integrated into CI/CD pipelines:
 ```yaml
 # Example GitHub Actions
 - name: Start Bot Service
-  run: ./bot_control.sh start
+  run: docker-compose up -d
   
 - name: Run E2E Tests
   run: npm run test:e2e -- --fail-fast

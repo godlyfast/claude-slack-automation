@@ -108,7 +108,7 @@ async function runTests() {
     // Show tips if there were failures
     if (framework.results.failed > 0) {
       console.log(chalk.yellow('\n💡 Troubleshooting Tips:'));
-      console.log('  • Ensure the bot service is running: ./bot_control.sh status');
+      console.log('  • Ensure the bot service is running: docker-compose ps');
       console.log('  • Check service logs: tail -f logs/slack-service.log');
       console.log('  • Verify database: sqlite3 data/slack-bot.db ".schema"');
       console.log('  • Run with --verbose for detailed output');

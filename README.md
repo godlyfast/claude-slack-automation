@@ -190,31 +190,34 @@ curl ${SERVICE_URL}/stats
 
 ### 🎛️ Control Commands
 
-**Using Bot Control Script (Recommended):**
+**Docker-based Control:**
 ```bash
-./bot_control.sh setup       # Complete setup wizard
-./bot_control.sh start       # Start all services
-./bot_control.sh stop        # Stop all services  
-./bot_control.sh restart     # Restart all services
-./bot_control.sh status      # Show detailed status
-./bot_control.sh logs        # Interactive log viewer
-./bot_control.sh diagnostics # Run system diagnostics
+# Start the service in detached mode
+docker-compose up -d
 
-# Service-only commands
-./bot_control.sh service start|stop|restart
+# Stop the service
+docker-compose down
+
+# View logs
+docker-compose logs -f
+
+# Restart the service
+docker-compose restart
 ```
 
-**Manual Controls:**
+**Manual Control (Without Docker):**
 ```bash
-# LaunchAgent controls (macOS)
-launchctl unload ~/Library/LaunchAgents/com.claude.slackbot.plist
-launchctl load ~/Library/LaunchAgents/com.claude.slackbot.plist
+# Start the service (from slack-service directory)
+npm start
 
-# Daemon controls
-./daemon_control.sh start|stop|restart|status|logs
+# Stop the service (from slack-service directory)
+# Press Ctrl+C in the terminal where the service is running
 
-# Emergency cleanup
-pkill -f queue_operations.sh
+# To run as a background service, consider using a process manager like pm2
+# npm install pm2 -g
+# pm2 start src/index.js --name slack-bot
+# pm2 stop slack-bot
+# pm2 logs slack-bot
 ```
 
 ## ⚙️ Configuration Options

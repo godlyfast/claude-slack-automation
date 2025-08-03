@@ -162,8 +162,8 @@ class API {
     });
 
     // Cache management endpoints
-    this.app.get('/cache/stats', (req, res) => {
-      const stats = this.slackService.getCacheStats();
+    this.app.get('/cache/stats', async (req, res) => {
+      const stats = await this.slackService.getCacheStats();
       res.json({
         success: true,
         stats
@@ -360,8 +360,8 @@ class API {
       }
     });
 
-    this.app.post('/cache/clear', (req, res) => {
-      this.slackService.clearCache();
+    this.app.post('/cache/clear', async (req, res) => {
+      await this.slackService.clearCache();
       res.json({
         success: true,
         message: 'Cache cleared'

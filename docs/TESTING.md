@@ -207,7 +207,7 @@ The test suite is designed for CI/CD integration:
 1. **Service not running**
    ```bash
    Error: Service not available at http://localhost:3030
-   Solution: ./bot_control.sh start
+   Solution: docker-compose up -d
    ```
 
 2. **Database locked**

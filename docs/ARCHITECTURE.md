@@ -2,15 +2,15 @@
 
 ## Unified Node.js Service
 
-The current architecture is a unified Node.js service that handles all aspects of the bot's operation, from Slack API interaction to message processing and scheduling. This design simplifies the system by removing the need for external shell scripts and consolidating all logic into a single, manageable codebase.
+The current architecture is a unified Node.js service that handles all aspects of the bot's operation, from Slack API interaction to message processing and scheduling. This design simplifies the system by consolidating all logic into a single, manageable codebase.
 
-### Proposed Architecture
+### Current Architecture
 
 ```mermaid
 graph TD
     subgraph "Unified Node.js Service"
         A[API Server (Express.js)]
-        B[Scheduler (e.g., node-cron)] --> C{Queue Manager};
+        B[Orchestrator] --> C{Queue Manager};
         C --> D[Message Fetcher];
         C --> E[Message Processor];
         C --> F[Response Sender];
@@ -27,14 +27,14 @@ graph TD
         L[Database] <--> I;
     end
 
-    A -- "Provides health checks, status, and manual triggers" --> C;
+    A -- "Provides health checks, status, and manual triggers" --> B;
 ```
 
 ### Key Components
 
 *   **API Server (Express.js)**: Provides endpoints for health checks, status monitoring, and manual control over the service.
-*   **Scheduler (node-cron)**: Manages scheduled tasks, such as fetching new messages and sending queued responses.
-*   **Queue Manager**: Orchestrates the flow of messages through the system, from fetching to processing and sending.
+*   **Orchestrator**: Manages scheduled tasks, such as fetching new messages and sending queued responses, using `node-cron`.
+*   **Queue Manager**: Orchestrates the flow of messages through the system, from fetching to processing and sending, managed within the Orchestrator.
 *   **Slack API Service**: Handles all communication with the Slack API, including fetching messages and sending responses.
 *   **LLM Service**: Interfaces with Large Language Model providers like Anthropic, OpenAI, or Google.
 *   **Database Service**: Manages all interactions with the database, including storing messages, responses, and application state.
@@ -43,7 +43,7 @@ graph TD
 
 *   **Simplicity**: A single codebase written in Node.js, making it easier to understand and manage.
 *   **Maintainability**: A unified structure simplifies debugging, testing, and adding new features.
-*   **Performance**: Eliminates the overhead associated with executing shell scripts, leading to better performance.
+*   **Performance**: Eliminates the overhead associated with executing external scripts, leading to better performance.
 *   **Reliability**: Can be managed with a robust process manager like PM2 or containerized with Docker for improved reliability and scalability.
 
 ## Data and State Management

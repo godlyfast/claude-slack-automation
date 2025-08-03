@@ -42,6 +42,21 @@ class LLMProcessor {
   }
 
   /**
+   * Process multiple messages in batch
+   * @param {Array} messages - An array of message objects
+   * @returns {Promise<Array>} - An array of processing results
+   */
+  async processMessages(messages) {
+    const results = [];
+    for (const message of messages) {
+      // Assuming channelHistory is fetched or passed differently for batch processing
+      const result = await this.processMessage(message);
+      results.push(result);
+    }
+    return results;
+  }
+
+  /**
    * Build the prompt for the LLM
    * @param {Object} message - The message object
    * @param {Array} channelHistory - Channel history

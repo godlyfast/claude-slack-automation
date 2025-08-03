@@ -1,8 +1,9 @@
 const logger = require('./logger');
+const Database = require('./db');
 
 class Cache {
   constructor() {
-    this.store = new Map();
+    this.db = new Database();
     this.stats = {
       hits: 0,
       misses: 0,
@@ -12,69 +13,40 @@ class Cache {
     };
   }
 
-  /**
-   * Get a value from cache
-   * @param {string} key - Cache key
-   * @returns {*} Cached value or null if expired/missing
-   */
-  get(key) {
-    const item = this.store.get(key);
-    
+  async get(key) {
+    const item = await this.db.getCache(key);
     if (!item) {
       this.stats.misses++;
       return null;
     }
 
-    // Check if expired
-    if (item.expiresAt && Date.now() > item.expiresAt) {
-      this.store.delete(key);
+    if (item.expires_at && new Date() > new Date(item.expires_at)) {
+      await this.db.deleteCache(key);
       this.stats.misses++;
       return null;
     }
 
     this.stats.hits++;
     logger.debug(`Cache hit for key: ${key}`);
-    return item.value;
+    return JSON.parse(item.value);
   }
 
-  /**
-   * Set a value in cache with TTL
-   * @param {string} key - Cache key
-   * @param {*} value - Value to cache
-   * @param {number} ttlSeconds - Time to live in seconds
-   */
-  set(key, value, ttlSeconds) {
-    const expiresAt = ttlSeconds ? Date.now() + (ttlSeconds * 1000) : null;
-    
-    this.store.set(key, {
-      value,
-      expiresAt,
-      createdAt: Date.now()
-    });
-    
+  async set(key, value, ttlSeconds) {
+    await this.db.setCache(key, JSON.stringify(value), ttlSeconds);
     this.stats.sets++;
     logger.debug(`Cache set for key: ${key}, TTL: ${ttlSeconds}s`);
   }
 
-  /**
-   * Delete a value from cache
-   * @param {string} key - Cache key
-   */
-  delete(key) {
-    const deleted = this.store.delete(key);
+  async delete(key) {
+    const deleted = await this.db.deleteCache(key);
     if (deleted) {
       this.stats.deletes++;
     }
     return deleted;
   }
 
-  /**
-   * Clear all cache entries
-   */
-  clear() {
-    const size = this.store.size;
-    this.store.clear();
-    this.stats.deletes += size;
+  async clear() {
+    await this.db.clearCache();
     logger.info('Cache cleared');
   }
 
@@ -94,57 +66,36 @@ class Cache {
   /**
    * Get cache statistics
    */
-  getStats() {
+  async getStats() {
     const hitRate = this.stats.hits + this.stats.misses > 0
       ? (this.stats.hits / (this.stats.hits + this.stats.misses) * 100).toFixed(2)
       : 0;
 
+    const dbStats = await this.db.getCacheStats();
+    const estimatedMemoryMB = (dbStats.estimatedMemoryBytes / 1024 / 1024).toFixed(2);
+
     return {
       ...this.stats,
       hitRate: `${hitRate}%`,
-      size: this.store.size,
-      estimatedMemoryMB: this._estimateMemoryUsage()
+      size: dbStats.size,
+      estimatedMemoryMB: estimatedMemoryMB
     };
   }
 
   /**
    * Clean up expired entries
    */
-  cleanup() {
-    let cleaned = 0;
-    const now = Date.now();
-
-    for (const [key, item] of this.store.entries()) {
-      if (item.expiresAt && now > item.expiresAt) {
-        this.store.delete(key);
-        cleaned++;
+  async cleanup() {
+    try {
+      const cleaned = await this.db.cleanupCache();
+      if (cleaned > 0) {
+        logger.debug(`Cache cleanup: removed ${cleaned} expired entries`);
       }
+      return cleaned;
+    } catch (error) {
+      logger.error('Error during cache cleanup:', error);
+      return 0;
     }
-
-    if (cleaned > 0) {
-      logger.debug(`Cache cleanup: removed ${cleaned} expired entries`);
-    }
-
-    return cleaned;
-  }
-
-  /**
-   * Estimate memory usage in MB
-   */
-  _estimateMemoryUsage() {
-    // Rough estimation based on JSON string size
-    let totalSize = 0;
-    
-    for (const [key, item] of this.store.entries()) {
-      try {
-        totalSize += key.length;
-        totalSize += JSON.stringify(item.value).length;
-      } catch (e) {
-        // Ignore circular references
-      }
-    }
-
-    return (totalSize / 1024 / 1024).toFixed(2);
   }
 
   /**
@@ -162,8 +113,8 @@ const cache = new Cache();
 let cleanupInterval = null;
 
 if (process.env.NODE_ENV !== 'test') {
-  cleanupInterval = setInterval(() => {
-    cache.cleanup();
+  cleanupInterval = setInterval(async () => {
+    await cache.cleanup();
   }, 60000);
 }
 
@@ -175,3 +126,4 @@ process.on('SIGTERM', () => {
 });
 
 module.exports = cache;
+module.exports.Cache = Cache;

@@ -6,7 +6,7 @@ class Orchestrator {
   constructor(slackService, api) {
     this.slackService = slackService;
     this.api = api;
-    this.llmProcessor = new LlmProcessor(this.slackService.db, this.slackService.config.llm);
+    this.llmProcessor = new LlmProcessor(this.slackService.config);
     this.jobs = [];
   }
 
@@ -47,9 +47,25 @@ class Orchestrator {
           // 3. Process new messages
           const pendingMessages = await this.slackService.db.getPendingMessages();
           if (pendingMessages.length > 0) {
+            // Mark messages as 'processing' to prevent re-fetching
+            for (const message of pendingMessages) {
+              await this.slackService.db.updateMessageStatus(message.message_id, 'processing');
+            }
+
             logger.info(`Processing ${pendingMessages.length} messages...`);
             const results = await this.llmProcessor.processMessages(pendingMessages);
             logger.info(`Processing complete. Results: ${JSON.stringify(results)}`);
+
+            for (let i = 0; i < pendingMessages.length; i++) {
+              const message = pendingMessages[i];
+              const response = results[i];
+              if (response && !response.startsWith('Error')) {
+                await this.slackService.db.queueResponse(message.message_id, message.channel_id, message.thread_ts, response);
+                await this.slackService.db.updateMessageStatus(message.message_id, 'processed');
+              } else {
+                await this.slackService.db.updateMessageStatus(message.message_id, 'error', response);
+              }
+            }
           }
         } else {
           logger.info('No new messages to fetch.');
