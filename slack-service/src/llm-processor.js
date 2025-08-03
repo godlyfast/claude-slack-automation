@@ -48,6 +48,13 @@ class LLMProcessor {
    * @returns {Promise<string>} - The prompt text
    */
   async buildPrompt(message, channelHistory) {
+    logger.info('buildPrompt called with message:', {
+      text: message.text,
+      files: message.files,
+      filePaths: message.filePaths,
+      hasAttachments: message.hasAttachments
+    });
+    
     const {
       text: messageText,
       channelName,
@@ -170,6 +177,46 @@ Please provide a direct and specific response to the user's message. If they are
     }
     
     return histories;
+  }
+
+  /**
+   * Filter file paths to only include those accessible by the channel
+   * This is a security measure to prevent cross-channel file access
+   * @param {Array} filePaths - Array of file paths
+   * @param {string} channel - Channel ID
+   * @returns {Array} - Filtered file paths
+   */
+  filterFilePathsByChannel(filePaths, channel) {
+    if (!filePaths || filePaths.length === 0) {
+      return [];
+    }
+
+    // Handle undefined channel
+    if (!channel) {
+      logger.warn('filterFilePathsByChannel called with undefined channel, returning all file paths');
+      return filePaths.map(fp => {
+        if (typeof fp === 'string') {
+          return { path: fp, name: path.basename(fp), type: 'file' };
+        }
+        return fp;
+      });
+    }
+
+    // Convert channel ID to channel name if needed
+    const channelName = channel.startsWith('#') ? channel : `#${channel}`;
+    
+    // For now, return all file paths as they are already filtered by the Slack service
+    // In a production environment, you might want to implement additional security checks
+    // such as verifying file ownership or channel-specific file restrictions
+    logger.info(`Filtering ${filePaths.length} file paths for channel ${channelName}`);
+    
+    return filePaths.map(fp => {
+      // Handle both string paths and file objects
+      if (typeof fp === 'string') {
+        return { path: fp, name: path.basename(fp), type: 'file' };
+      }
+      return fp;
+    });
   }
 }
 

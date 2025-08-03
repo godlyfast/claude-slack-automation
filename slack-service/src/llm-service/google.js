@@ -20,24 +20,50 @@ class GoogleService extends LLMService {
 
     for (const file of files) {
       try {
-        const uploadedFile = await this.genAI.files.upload({
-          path: file.path,
-        });
-        
-        parts.push({ fileData: { fileUri: uploadedFile.uri, mimeType: uploadedFile.mimeType } });
+        // Check if file upload API is available (newer SDK versions)
+        if (this.genAI.files && this.genAI.files.upload) {
+          const uploadedFile = await this.genAI.files.upload({
+            path: file.path,
+          });
+          
+          parts.push({ fileData: { fileUri: uploadedFile.uri, mimeType: uploadedFile.mimeType } });
+        } else {
+          // If file upload API is not available, check file type
+          const fs = require('fs').promises;
+          const path = require('path');
+          const ext = path.extname(file.path).toLowerCase();
+          
+          if (ext === '.pdf') {
+            // PDFs cannot be read as text directly
+            parts.push({ text: `[PDF File: ${file.name}]\n\nNote: PDF file analysis is not available when the file upload API is not supported. Please use a text-based format or ensure the Google AI file upload API is available.` });
+          } else {
+            // For text files, embed content directly
+            try {
+              const content = await fs.readFile(file.path, 'utf-8');
+              parts.push({ text: `Here is the content of the file named ${file.name}:\n\n${content}` });
+            } catch (error) {
+              // File might be binary or unreadable
+              parts.push({ text: `[Binary File: ${file.name}]\n\nThis appears to be a binary file that cannot be read as text. File type: ${ext}` });
+            }
+          }
+        }
       } catch (error) {
-        logger.error(`Failed to upload file ${file.name} to Google AI`, error);
-        // Fallback to embedding content if upload fails
-        const fs = require('fs').promises;
-        const content = await fs.readFile(file.path, 'utf-8');
-        parts.push({ text: `Here is the content of the file named ${file.name}:\n\n${content}` });
+        logger.error(`Failed to process file ${file.name}:`, error);
+        // Fallback handling
+        const path = require('path');
+        const ext = path.extname(file.path).toLowerCase();
+        if (ext === '.pdf') {
+          parts.push({ text: `[PDF File: ${file.name}]\n\nNote: PDF file analysis encountered an error. PDF support requires the Google AI file upload API.` });
+        } else {
+          parts.push({ text: `[File: ${file.name}]\n\nUnable to process this file. Error: ${error.message}` });
+        }
       }
     }
 
     logger.info('Sending parts to Google:', { parts: JSON.stringify(parts, null, 2) });
 
     const result = await model.generateContent(parts);
-    const response = await result.response;
+    const response = result.response;
     return response.text();
   }
 }

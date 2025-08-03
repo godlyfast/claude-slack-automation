@@ -102,6 +102,16 @@ sqlite3 slack-service/data/slack-bot.db "PRAGMA integrity_check;"
 - Check message queue entries: `sqlite3 slack-service/data/slack-bot.db "SELECT * FROM message_queue ORDER BY fetched_at DESC LIMIT 5;"`
 - Fix: Update db.js to use `message.user.id || message.user`
 
+#### PDF files not analyzed correctly
+- **Issue**: Bot may hallucinate PDF content or fail to read PDFs
+- **Cause**: Google Gemini API has limited PDF support without file upload API
+- **Solutions**:
+  1. Use text files (.txt, .md) instead of PDFs for best results
+  2. Convert PDFs to text before uploading
+  3. Switch to `anthropic` or `openai` provider which have better PDF support
+  4. Upgrade Google AI SDK to version with file upload API support
+- **Note**: The bot will now explicitly state when it cannot analyze a PDF
+
 #### Database growing too large
 - Normal - bot preserves all messages
 - Backup and start fresh if needed
@@ -223,6 +233,47 @@ cp slack-service/data.backup/slack-bot.db slack-service/data/
 2. **Run integration test** - Identifies configuration problems  
 3. **Review configuration** - Ensure config.env is correct
 4. **Check documentation** - See [README.md](../README.md) for setup
+
+## 🆕 Recent Fixes and Updates
+
+### Fixed Issues
+
+#### LLMProcessor Reference Error
+- **Issue**: `ReferenceError: LLMProcessor is not defined`
+- **Fix**: Added missing class export in `llm-processor.js`
+- **Status**: ✅ Fixed
+
+#### MCP Message Filtering
+- **Issue**: MCP messages from Claude were being filtered as bot messages
+- **Fix**: Added specific handling for MCP bot_id (B097ML1T6DQ)
+- **Status**: ✅ Fixed
+
+#### User ID Serialization
+- **Issue**: User IDs stored as "[object Object]" in database
+- **Fix**: Updated db.js to properly extract user.id from user objects
+- **Status**: ✅ Fixed
+
+#### Thread Timestamp Issues
+- **Issue**: "invalid_thread_ts" errors when responding
+- **Fix**: Use message_id instead of database row ID for thread_ts
+- **Status**: ✅ Fixed
+
+#### Google LLM File Handling
+- **Issue**: PDF files causing errors or hallucinated content
+- **Fix**: Added explicit PDF detection and user notification
+- **Status**: ✅ Fixed
+
+### New Features
+
+#### E2E Test Suite
+- Comprehensive test framework in `tests/integration/`
+- Run with `npm run test:e2e`
+- Covers basic messaging, file handling, and advanced features
+
+#### Multiple LLM Provider Support
+- Added `claude-code` provider for Claude CLI
+- Improved provider factory pattern
+- Better error handling across providers
 
 ## Monitoring Health
 

@@ -45,20 +45,19 @@ This automation uses a Node.js service to monitor Slack channels and threads, wh
 # Complete setup (does everything for you)
 ./bot_control.sh setup
 
-# Start daemon processes
-./daemon_control.sh start
-
 # Check status
 ./bot_control.sh status
-./daemon_control.sh status
 
 # View logs
 ./bot_control.sh logs
-./daemon_control.sh logs all
 
-# Start/stop services
+# Start/stop/restart services
 ./bot_control.sh start
 ./bot_control.sh stop
+./bot_control.sh restart
+
+# Enable automatic daemon (optional)
+./bot_control.sh daemon start
 ```
 
 ### 🔧 Manual Setup Options
@@ -169,7 +168,7 @@ claude-slack-automation/
 ### 🤖 Bot Features
 - **Channel Monitoring**: Responds to messages containing keywords "AI" or "ШІ"
 - **Thread Support**: Continues conversations in threads with full context
-- **File Attachments**: Reads and analyzes code files, text files, images, and more
+- **File Attachments**: Reads and analyzes text/code files (PDF support limited with Google Gemini)
 - **Loop Prevention**: 8-layer system prevents infinite response loops
 - **Deduplication**: Never responds to the same message twice
 - **Self-Awareness**: Won't respond to its own messages or other bots
@@ -180,20 +179,44 @@ Once installed, the bot runs automatically:
 - **Daemon**: Continuous background process
 - **Cron**: Every minute (Linux/Unix)
 
-### 🧪 Manual Testing
-```bash
-# Start Node.js service (if not running)
-cd slack-service && npm start &
+### 🧪 Testing
 
+**End-to-End Test Suite:**
+```bash
+# Run all E2E tests
+cd slack-service && npm run test:e2e
+
+# Run specific test scenarios
+npm run test:e2e:basic      # Basic messaging tests
+npm run test:e2e:files      # File handling tests
+npm run test:e2e:advanced   # Advanced features tests
+
+# Run with options
+npm run test:e2e -- --verbose     # Detailed output
+npm run test:e2e -- --quiet       # Minimal output
+npm run test:e2e -- --fail-fast   # Stop on first failure
+```
+
+**Unit Tests:**
+```bash
+# Run unit tests
+cd slack-service && npm test
+
+# Run with coverage
+npm run test:coverage
+
+# Watch mode
+npm run test:watch
+```
+
+**Manual Testing:**
+```bash
 # Run single bot check
 ./queue_operations.sh priority
 
 # Test service endpoints
 curl ${SERVICE_URL}/health
 curl ${SERVICE_URL}/messages/unresponded
-
-# Run integration test
-./test_integration_simple.sh
 ```
 
 ### 📊 Monitoring & Logs

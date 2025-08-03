@@ -28,10 +28,13 @@ The Claude Slack Bot now supports reading and processing file attachments from S
 - `.gif` - Animated images
 - `.webp` - Modern image format
 
-### ⚠️ Partially Supported
+### ⚠️ Limited Support
 
 **Documents:**
-- `.pdf` - Downloads but content extraction not implemented
+- `.pdf` - Limited support depending on LLM provider:
+  - **Google Gemini**: Cannot analyze PDF content (will inform user)
+  - **Anthropic/OpenAI**: Better PDF support
+  - **Claude Code CLI**: Can read PDFs
 
 ### ❌ Unsupported
 - `.docx`, `.xlsx`, `.pptx` - Microsoft Office documents
@@ -203,14 +206,13 @@ The bot needs these Slack permissions to process files:
 - `files:write` - Access file content (for user tokens)
 - Access to channels where files are shared
 
-## 🚀 Future Enhancements
+## 🚀 Recent Improvements
 
-Planned improvements:
-- **PDF text extraction**: Extract text from PDF documents
-- **Archive support**: Process .zip files containing code
-- **Office document support**: Read .docx, .xlsx files
-- **Audio transcription**: Process voice messages
-- **Video analysis**: Extract frames from video files
+- **Better error handling**: Clear messages when files can't be processed
+- **PDF awareness**: Bot now explicitly states PDF limitations with Google Gemini
+- **Multiple LLM support**: Different providers have different file capabilities
+- **Improved file filtering**: Security improvements for channel-specific files
+- **E2E test coverage**: Comprehensive testing for file handling scenarios
 
 ## 💡 Tips for Users
 

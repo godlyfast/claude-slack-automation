@@ -1,0 +1,11 @@
+This is a test file for the Google LLM integration.
+
+Important Information:
+- The secret word is: PINEAPPLE
+- The magic number is: 42
+- Today's special code is: GLM-2024-TEST
+
+Please analyze this file and tell me:
+1. What is the secret word?
+2. What is the magic number?
+3. What is today's special code?

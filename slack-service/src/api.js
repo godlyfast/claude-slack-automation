@@ -225,7 +225,7 @@ class API {
             if (message.filePaths && message.filePaths.length > 0) {
               message.filePaths = this.llmProcessor.filterFilePathsByChannel(
                 message.filePaths,
-                message.channel
+                message.channel || message.channel_id
               );
             }
 
@@ -234,7 +234,7 @@ class API {
             if (channelFiles.length > 0) {
               const filteredChannelFiles = this.llmProcessor.filterFilePathsByChannel(
                 channelFiles,
-                message.channel
+                message.channel || message.channel_id
               );
               message.filePaths = [...(message.filePaths || []), ...filteredChannelFiles];
               // Remove duplicates
@@ -243,6 +243,15 @@ class API {
               );
             }
 
+            // Convert filePaths to files format for LLM processing
+            if (message.filePaths && message.filePaths.length > 0) {
+              message.files = message.filePaths;
+              logger.info('Converted filePaths to files:', {
+                filePaths: message.filePaths,
+                files: message.files
+              });
+            }
+            
             // Process message with LLM
             const response = await this.llmProcessor.processMessage(message, channelHistory);
             

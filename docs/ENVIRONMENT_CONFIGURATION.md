@@ -93,8 +93,12 @@ All configuration is stored in `config.env` in the project root. This file is so
 | `OPENAI_MODEL` | OpenAI model name | gpt-4-turbo-preview | No |
 | `CHANNEL_HISTORY_LIMIT` | Max messages to fetch for context | 200 | No |
 | `CHANNEL_HISTORY_DISPLAY` | Max messages to include in prompt | 100 | No |
+| `CLAUDE_TIMEOUT` | Timeout for Claude CLI (seconds) | 30 | No |
 
-Note: When using `claude-code` provider, no API key is required, but Claude Code CLI must be installed on the system.
+**Provider Notes:**
+- When using `claude-code` provider, no API key is required, but Claude Code CLI must be installed
+- PDF support varies by provider (Google Gemini has limited PDF support)
+- File size limits apply to all providers (10MB default)
 
 ### Other Settings
 

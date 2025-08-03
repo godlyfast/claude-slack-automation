@@ -39,9 +39,19 @@ claude-slack-automation/
 │   │   ├── openai.js                # OpenAI API implementation
 │   │   ├── google.js                # Google AI API implementation
 │   │   └── factory.js               # LLM service factory
-│   ├── tests/                       # Unit tests
-│   │   ├── slack-service.test.js
-│   │   ├── llm-processor.test.js    # Tests for LLM processor
+│   ├── tests/                       # Test suites
+│   │   ├── integration/             # E2E test framework
+│   │   │   ├── TestFramework.js     # Core testing utilities
+│   │   │   ├── scenarios/           # Test scenarios
+│   │   │   │   ├── BasicMessaging.js
+│   │   │   │   ├── FileHandling.js
+│   │   │   │   └── AdvancedFeatures.js
+│   │   │   ├── fixtures/            # Test files (gitignored)
+│   │   │   ├── run-e2e-tests.js     # Main test runner
+│   │   │   ├── demo.js              # Framework demo
+│   │   │   └── README.md            # Test documentation
+│   │   ├── slack-service.test.js    # Unit tests
+│   │   ├── llm-processor.test.js
 │   │   ├── api.test.js
 │   │   ├── db.test.js
 │   │   ├── file-handler.test.js
